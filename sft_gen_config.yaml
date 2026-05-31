@@ -61,6 +61,10 @@ cleaner:
   max_word_repetition_ratio: 0.5
   max_char_repetition_ratio: 0.5
   dedup: true
+  embedding_dedup: false                    # API-based semantic dedup (requires embedding model)
+  embedding_model: "text-embedding-3-small" # model for embedding API
+  embedding_similarity_threshold: 0.85      # dedup if cosine similarity >= threshold
+  embedding_batch_size: 20                  # batch size for embedding API calls
 
 output:
   path: ./generated_sft.jsonl

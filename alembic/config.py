@@ -51,6 +51,10 @@ class CleanerConfig:
     max_word_repetition_ratio: float = 0.5
     max_char_repetition_ratio: float = 0.5
     dedup: bool = True
+    embedding_dedup: bool = False
+    embedding_model: str = "text-embedding-3-small"
+    embedding_similarity_threshold: float = 0.85
+    embedding_batch_size: int = 20
 
 
 @dataclass
@@ -119,6 +123,10 @@ class AppConfig:
             max_word_repetition_ratio=float(cleaner_data.get("max_word_repetition_ratio", 0.5)),
             max_char_repetition_ratio=float(cleaner_data.get("max_char_repetition_ratio", 0.5)),
             dedup=cleaner_data.get("dedup", True),
+            embedding_dedup=cleaner_data.get("embedding_dedup", False),
+            embedding_model=cleaner_data.get("embedding_model", "text-embedding-3-small"),
+            embedding_similarity_threshold=float(cleaner_data.get("embedding_similarity_threshold", 0.85)),
+            embedding_batch_size=int(cleaner_data.get("embedding_batch_size", 20)),
         )
 
         output_cfg = OutputConfig(
