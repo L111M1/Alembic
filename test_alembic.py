@@ -63,8 +63,8 @@ def main():
     cfg = AppConfig.from_yaml('sft_gen_config.yaml')
     assert cfg.api.model == 'qwen-plus'
     assert len(cfg.strategies) == 3
-    assert cfg.cleaner.remove_html == True
-    print(f"Test 7 (Config): PASSED")
+    assert cfg.cleaner.remove_html
+    print("Test 7 (Config): PASSED")
 
     builder = PromptBuilder()
     builder.system("You are helpful")

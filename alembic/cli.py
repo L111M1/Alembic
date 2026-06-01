@@ -1,6 +1,5 @@
 import click
 import logging
-import sys
 from pathlib import Path
 
 from alembic.core.pipeline import Pipeline
@@ -35,7 +34,7 @@ def generate(config: str, dry_run: bool, count: int, seed: int):
         pipeline._config.random_seed = seed
 
     stats = pipeline.run()
-    print(f"\n=== Generation Complete ===")
+    print("\n=== Generation Complete ===")
     print(f"  Attempted:  {stats.total_attempted}")
     print(f"  Generated:  {stats.total_generated}")
     print(f"  Filtered:   {stats.total_filtered}")
@@ -61,7 +60,7 @@ def clean(input_file: str, output: str, config: str):
 
     cleaner = DatasetCleaner(cleaner_cfg)
     kept, dropped = cleaner.clean_file(input_file, output)
-    print(f"\n=== Clean Complete ===")
+    print("\n=== Clean Complete ===")
     print(f"  Kept:    {kept}")
     print(f"  Dropped: {dropped}")
     print(f"  Output:  {output}")

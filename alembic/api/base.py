@@ -3,7 +3,6 @@ import json
 import time
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 
 logger = logging.getLogger(__name__)
@@ -79,7 +78,7 @@ def _extract_json(raw: str) -> dict:
     raw = raw.strip()
     if raw.startswith("```"):
         lines = raw.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         raw = "\n".join(lines).strip()
     for char in "{[":
         if char in raw:

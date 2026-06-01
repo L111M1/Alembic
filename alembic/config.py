@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Optional
 
 
 @dataclass
@@ -57,6 +57,7 @@ class CleanerConfig:
     embedding_batch_size: int = 20
     embedding_api_key: Optional[str] = None
     embedding_base_url: Optional[str] = None
+    field_map: Optional[dict] = None  # e.g. {"instruction": "question", "output": "answer"}
 
 
 @dataclass
@@ -131,6 +132,7 @@ class AppConfig:
             embedding_batch_size=int(cleaner_data.get("embedding_batch_size", 20)),
             embedding_api_key=cleaner_data.get("embedding_api_key"),
             embedding_base_url=cleaner_data.get("embedding_base_url"),
+            field_map=cleaner_data.get("field_map"),
         )
 
         output_cfg = OutputConfig(

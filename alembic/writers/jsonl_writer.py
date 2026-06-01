@@ -3,7 +3,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from alembic.core.types import GenerationSample
 from alembic.config import OutputConfig

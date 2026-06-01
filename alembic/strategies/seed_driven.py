@@ -3,8 +3,8 @@ import random
 from typing import Iterator
 
 from alembic.api.base import BaseAPIClient
-from alembic.core.types import GenerationSample, SeedSample
-from alembic.prompts.builder import PromptBuilder, load_seeds, format_examples
+from alembic.core.types import SeedSample
+from alembic.prompts.builder import PromptBuilder, load_seeds
 from alembic.strategies.base import GenerationStrategy
 
 logger = logging.getLogger(__name__)
@@ -15,8 +15,9 @@ class SeedDrivenStrategy(GenerationStrategy):
         super().__init__(api, params)
         self._seeds: list[SeedSample] = []
         seed_file = params.get("seed_file")
+        field_map = params.get("field_map")
         if seed_file:
-            self._seeds = load_seeds(seed_file)
+            self._seeds = load_seeds(seed_file, field_map)
         self._example_num = max(1, min(int(params.get("example_num", 3)), len(self._seeds)))
         self._target_count = int(params.get("target_count", 10))
 

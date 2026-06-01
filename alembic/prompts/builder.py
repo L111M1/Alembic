@@ -1,6 +1,4 @@
 from __future__ import annotations
-import os
-import random
 import json
 from pathlib import Path
 from typing import Optional
@@ -88,7 +86,7 @@ def format_examples(examples: list[SeedSample], builder: Optional[PromptBuilder]
     return b
 
 
-def load_seeds(seed_file: str) -> list[SeedSample]:
+def load_seeds(seed_file: str, field_map: Optional[dict] = None) -> list[SeedSample]:
     seeds = []
     with open(seed_file, "r", encoding="utf-8") as f:
         for line in f:
@@ -97,6 +95,8 @@ def load_seeds(seed_file: str) -> list[SeedSample]:
                 continue
             try:
                 item = json.loads(line)
+                if field_map:
+                    item = {v: item.get(k, "") for k, v in field_map.items()}
                 if "messages" in item:
                     msgs = item["messages"]
                     user_msg = ""

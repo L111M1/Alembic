@@ -1,5 +1,5 @@
-from alembic.strategies.base import GenerationStrategy
-from alembic.strategies.topic_driven import TopicDrivenStrategy
-from alembic.strategies.seed_driven import SeedDrivenStrategy
-from alembic.strategies.self_instruct import SelfInstructStrategy
-from alembic.strategies.composite import CompositeStrategy, create_strategy
+from alembic.strategies.base import GenerationStrategy as GenerationStrategy
+from alembic.strategies.topic_driven import TopicDrivenStrategy as TopicDrivenStrategy
+from alembic.strategies.seed_driven import SeedDrivenStrategy as SeedDrivenStrategy
+from alembic.strategies.self_instruct import SelfInstructStrategy as SelfInstructStrategy
+from alembic.strategies.composite import CompositeStrategy as CompositeStrategy, create_strategy as create_strategy

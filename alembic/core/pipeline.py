@@ -1,14 +1,12 @@
 import logging
-import sys
 from pathlib import Path
-from typing import Optional
 
 from tqdm import tqdm
 
 from alembic.api.factory import create_client
 from alembic.config import AppConfig
 from alembic.core.types import GenerationStats
-from alembic.core.observer import LogObserver, CompositeObserver
+from alembic.core.observer import LogObserver
 from alembic.quality.validators import build_validator_chain
 from alembic.strategies.composite import create_strategy
 from alembic.writers.jsonl_writer import JSONLWriter

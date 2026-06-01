@@ -127,6 +127,9 @@ class DatasetCleaner:
         return candidates
 
     def _basic_clean(self, sample: dict) -> Optional[dict]:
+        cfg = self._config
+        if cfg.field_map:
+            sample = {v: sample.get(k, "") for k, v in cfg.field_map.items()}
         inst = sample.get("instruction", "")
         out = sample.get("output", "") or sample.get("response", "")
         cfg = self._config

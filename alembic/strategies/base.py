@@ -6,7 +6,6 @@ from typing import Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
 from alembic.core.types import GenerationSample
-from alembic.prompts.builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +110,7 @@ class GenerationStrategy(abc.ABC):
         text = response_text.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [line for line in lines if not line.strip().startswith("```")]
             text = "\n".join(lines).strip()
         data = json.loads(text)
         instruction = data.get("instruction", "").strip()
