@@ -22,8 +22,8 @@ class EmbeddingClient:
         base_url: Optional[str] = None,
     ):
         self._model = model
-        key = api_key or os.environ.get("API_KEY", "")
-        url = base_url or os.environ.get("BASE_URL", "") or None
+        key = api_key or os.environ.get("EMBEDDING_API_KEY") or os.environ.get("API_KEY", "")
+        url = base_url or os.environ.get("EMBEDDING_BASE_URL") or os.environ.get("BASE_URL", "") or None
         self._client = OpenAI(api_key=key, base_url=url)
 
     def embed(self, texts: list[str]) -> list[list[float]]:

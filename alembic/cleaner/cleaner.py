@@ -160,15 +160,25 @@ class DatasetCleaner:
 
     def _semantic_dedup(self, candidates: list[dict]) -> list[dict]:
         import numpy as np
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        client = EmbeddingClient(model=self._config.embedding_model)
+        client = EmbeddingClient(
+            model=self._config.embedding_model,
+            api_key=self._config.embedding_api_key,
+            base_url=self._config.embedding_base_url,
+        )
         texts = [s["instruction"] + " " + s["output"] for s in candidates]
-        all_embeddings: list[list[float]] = []
         batch_size = self._config.embedding_batch_size
+        batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
 
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            all_embeddings.extend(client.embed(batch))
+        all_embeddings: list[list[float]] = [None] * len(batches)
+        with ThreadPoolExecutor(max_workers=min(10, len(batches))) as executor:
+            futures = {executor.submit(client.embed, batch): i for i, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                idx = futures[future]
+                all_embeddings[idx] = future.result()
+
+        all_embeddings = [e for emb in all_embeddings for e in emb]
 
         emb_matrix = np.array(all_embeddings, dtype=np.float32)
         norms = np.linalg.norm(emb_matrix, axis=1, keepdims=True)

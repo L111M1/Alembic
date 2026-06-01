@@ -55,6 +55,8 @@ class CleanerConfig:
     embedding_model: str = "text-embedding-3-small"
     embedding_similarity_threshold: float = 0.85
     embedding_batch_size: int = 20
+    embedding_api_key: Optional[str] = None
+    embedding_base_url: Optional[str] = None
 
 
 @dataclass
@@ -127,6 +129,8 @@ class AppConfig:
             embedding_model=cleaner_data.get("embedding_model", "text-embedding-3-small"),
             embedding_similarity_threshold=float(cleaner_data.get("embedding_similarity_threshold", 0.85)),
             embedding_batch_size=int(cleaner_data.get("embedding_batch_size", 20)),
+            embedding_api_key=cleaner_data.get("embedding_api_key"),
+            embedding_base_url=cleaner_data.get("embedding_base_url"),
         )
 
         output_cfg = OutputConfig(

@@ -10,6 +10,8 @@ from alembic.prompts.builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
 
+_MAX_RETRIES = 4  # 1 initial + 3 retries
+
 
 class GenerationStrategy(abc.ABC):
     def __init__(self, api: BaseAPIClient, params: dict):
@@ -35,19 +37,15 @@ class GenerationStrategy(abc.ABC):
 
     def _generate_sequential(self) -> Iterator[GenerationSample]:
         for prompt_id, messages in self.iter_prompts():
-            try:
-                raw = self._call_api(messages)
-                meta = self._build_metadata(prompt_id)
-                samples = self._parse(response_text=raw, metadata=meta)
-                for s in samples:
-                    if s.instruction and s.output:
-                        yield s
-                    else:
-                        logger.warning(f"[{self._name}] empty instruction/output, skipping")
-            except json.JSONDecodeError as e:
-                logger.warning(f"[{self._name}] JSON parse error for {prompt_id}: {e}")
-            except Exception as e:
-                logger.error(f"[{self._name}] generation error for {prompt_id}: {e}")
+            meta = self._build_metadata(prompt_id)
+            samples = self._call_and_parse_with_retry(messages, meta, prompt_id)
+            if samples is None:
+                continue
+            for s in samples:
+                if s.instruction and s.output:
+                    yield s
+                else:
+                    logger.warning(f"[{self._name}] empty instruction/output, skipping")
 
     def _generate_parallel(self) -> Iterator[GenerationSample]:
         prompts = list(self.iter_prompts())
@@ -56,10 +54,21 @@ class GenerationStrategy(abc.ABC):
 
         logger.info(f"[{self._name}] dispatching {len(prompts)} prompts with concurrency={self._concurrency}")
         with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+            def submit_with_retry(prompt_id: str, messages: list[dict], meta: dict):
+                for attempt in range(1, _MAX_RETRIES + 1):
+                    if attempt > 1:
+                        logger.info(f"[{self._name}] retry {attempt}/{_MAX_RETRIES} for {prompt_id}")
+                    try:
+                        return self._call_and_parse(messages, meta)
+                    except (json.JSONDecodeError, Exception) as e:
+                        if attempt == _MAX_RETRIES:
+                            raise
+                        logger.warning(f"[{self._name}] {type(e).__name__} for {prompt_id} (attempt {attempt}): {e}")
+
             futures = {}
             for prompt_id, messages in prompts:
                 meta = self._build_metadata(prompt_id)
-                future = executor.submit(self._call_and_parse, messages, meta)
+                future = executor.submit(submit_with_retry, prompt_id, messages, meta)
                 futures[future] = prompt_id
 
             for future in as_completed(futures):
@@ -71,14 +80,24 @@ class GenerationStrategy(abc.ABC):
                             yield s
                         else:
                             logger.warning(f"[{self._name}] empty instruction/output, skipping")
-                except json.JSONDecodeError as e:
-                    logger.warning(f"[{self._name}] JSON parse error for {prompt_id}: {e}")
-                except Exception as e:
-                    logger.error(f"[{self._name}] generation error for {prompt_id}: {e}")
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"[{self._name}] failed for {prompt_id} after {_MAX_RETRIES} attempts: {e}")
 
     def _call_and_parse(self, messages: list[dict], metadata: dict = None) -> list[GenerationSample]:
         raw = self._call_api(messages)
         return self._parse(response_text=raw, metadata=metadata)
+
+    def _call_and_parse_with_retry(self, messages: list[dict], metadata: dict, prompt_id: str) -> Optional[list[GenerationSample]]:
+        for attempt in range(1, _MAX_RETRIES + 1):
+            if attempt > 1:
+                logger.info(f"[{self._name}] retry {attempt}/{_MAX_RETRIES} for {prompt_id}")
+            try:
+                return self._call_and_parse(messages, metadata)
+            except (json.JSONDecodeError, Exception) as e:
+                if attempt == _MAX_RETRIES:
+                    logger.warning(f"[{self._name}] failed for {prompt_id} after {_MAX_RETRIES} attempts: {e}")
+                    return None
+                logger.warning(f"[{self._name}] {type(e).__name__} for {prompt_id} (attempt {attempt}): {e}")
 
     def estimated_count(self) -> int:
         return len(self._params.get("topics", [])) * self._params.get("samples_per_topic", 1)
