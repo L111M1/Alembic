@@ -67,12 +67,9 @@ class TopicDrivenStrategy(GenerationStrategy):
             topic = entry["topic"]
             knowledge = entry.get("knowledge", "")
             for i in range(entry["count"]):
-                cur_topic = topic
-                if entry["count"] > 1:
-                    cur_topic = f"{topic} ({i + 1}/{entry['count']}, generate content different from previous)"
                 builder = PromptBuilder(lang=self._lang)
                 builder.from_template("topic_driven_system.j2")
-                builder.from_template("topic_driven_user.j2", topic=cur_topic, knowledge=knowledge)
+                builder.from_template("topic_driven_user.j2", topic=topic, knowledge=knowledge)
                 messages = builder.build()
                 prompt_id = f"topic:{topic}:{i}"
                 yield (prompt_id, messages)

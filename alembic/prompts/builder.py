@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import random
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,10 @@ from alembic.core.types import SeedSample
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
+def _split_filter(value: str, sep: str = ",") -> list[str]:
+    return [s.strip() for s in value.split(sep) if s.strip()]
+
+
 class PromptBuilder:
     def __init__(self, lang: str = "en"):
         self._messages: list[dict] = []
@@ -18,6 +23,8 @@ class PromptBuilder:
             loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
             autoescape=False,
         )
+        env.globals["random"] = random
+        env.filters["split"] = _split_filter
         self._env = env
 
     def system(self, text: str) -> PromptBuilder:

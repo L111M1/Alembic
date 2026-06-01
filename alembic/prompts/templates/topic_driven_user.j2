@@ -1,4 +1,14 @@
-user: Generate one SFT training sample for the topic "{{ topic }}".{% if knowledge %} Use the following background knowledge to ensure accuracy:
+{% set question_types = ["concept explanation", "comparison", "application problem", "true/false", "short answer", "scenario simulation", "case analysis", "derivation/proof"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set sub_topics = knowledge | replace("，", ",") | split(",") if knowledge else [] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
+{% set sub_topic = random.choice(sub_topics) if sub_topics else "" %}
+user: Generate one SFT training sample for the topic "{{ topic }}".
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
+{% if sub_topic %}Sub-topic: {{ sub_topic }}{% endif %}
+{% if knowledge %} Use the following background knowledge to ensure accuracy:
 {{ knowledge }}{% endif %}
 Output pure JSON only, no extra text:
 {
