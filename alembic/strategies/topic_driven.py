@@ -1,5 +1,5 @@
 import logging
-from typing import Iterator
+from typing import Any, Iterator
 
 from alembic.api.base import BaseAPIClient
 from alembic.prompts.builder import PromptBuilder
@@ -14,9 +14,9 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._topics_raw = params.get("topics", [])
         self._samples_per_topic = int(params.get("samples_per_topic", 1))
         self._total_count = int(params.get("total_count", 0))
-        self._plan: list[tuple[str, int]] = self._build_plan()
+        self._plan: list[dict[str, Any]] = self._build_plan()
 
-    def _build_plan(self) -> list[tuple[str, int]]:
+    def _build_plan(self) -> list[dict[str, Any]]:
         if not self._topics_raw:
             return []
         first = self._topics_raw[0]
@@ -25,48 +25,54 @@ class TopicDrivenStrategy(GenerationStrategy):
         else:
             return self._build_flat_plan()
 
-    def _build_flat_plan(self) -> list[tuple[str, int]]:
+    def _build_flat_plan(self) -> list[dict[str, Any]]:
         plan = []
         for topic in self._topics_raw:
-            plan.append((str(topic), self._samples_per_topic))
+            plan.append({"topic": str(topic), "count": self._samples_per_topic, "knowledge": ""})
         logger.info(f"TopicDriven (flat): {len(plan)} topics x {self._samples_per_topic}")
         return plan
 
-    def _build_weighted_plan(self) -> list[tuple[str, int]]:
-        items: list[tuple[str, float]] = []
+    def _build_weighted_plan(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
         for entry in self._topics_raw:
             topic = entry.get("topic", "")
             weight = float(entry.get("weight", 1.0))
             if topic and weight > 0:
-                items.append((topic, weight))
+                items.append({
+                    "topic": topic,
+                    "weight": weight,
+                    "knowledge": entry.get("knowledge", ""),
+                })
         if not items:
             return []
-        total_weight = sum(w for _, w in items)
+        total_weight = sum(it["weight"] for it in items)
         target = self._total_count or self._samples_per_topic * len(items)
         plan = []
         allocated = 0
-        for i, (topic, w) in enumerate(items):
+        for i, it in enumerate(items):
             if i == len(items) - 1:
                 count = target - allocated
             else:
-                count = max(1, round(target * w / total_weight))
-            plan.append((topic, count))
+                count = max(1, round(target * it["weight"] / total_weight))
+            plan.append({"topic": it["topic"], "count": count, "knowledge": it["knowledge"]})
             allocated += count
         logger.info(
             f"TopicDriven (weighted): target={target}, "
-            f"items={[(t, int(w), cnt) for (t, w), (_, cnt) in zip(items, plan)]}"
+            f"items={[(it['topic'], it['weight'], it['count']) for it in plan if 'weight' in it]}"
         )
         return plan
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
-        for topic, count in self._plan:
-            for i in range(count):
+        for entry in self._plan:
+            topic = entry["topic"]
+            knowledge = entry.get("knowledge", "")
+            for i in range(entry["count"]):
                 cur_topic = topic
-                if count > 1:
-                    cur_topic = f"{topic} ({i + 1}/{count}, generate content different from previous)"
+                if entry["count"] > 1:
+                    cur_topic = f"{topic} ({i + 1}/{entry['count']}, generate content different from previous)"
                 builder = PromptBuilder(lang=self._lang)
                 builder.from_template("topic_driven_system.j2")
-                builder.from_template("topic_driven_user.j2", topic=cur_topic)
+                builder.from_template("topic_driven_user.j2", topic=cur_topic, knowledge=knowledge)
                 messages = builder.build()
                 prompt_id = f"topic:{topic}:{i}"
                 yield (prompt_id, messages)
@@ -76,4 +82,4 @@ class TopicDrivenStrategy(GenerationStrategy):
         return {"strategy": "topic_driven", "topic": parts[1] if len(parts) >= 2 else ""}
 
     def estimated_count(self) -> int:
-        return sum(cnt for _, cnt in self._plan)
+        return sum(entry["count"] for entry in self._plan)

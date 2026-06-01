@@ -1,4 +1,6 @@
-user: 请为主题 "{{ topic }}" 生成一条 SFT 训练数据。用纯 JSON 格式输出，只输出 JSON，不要有其他文字：
+user: 请为主题 "{{ topic }}" 生成一条 SFT 训练数据。{% if knowledge %}参考以下背景知识来确保准确性：
+{{ knowledge }}{% endif %}
+用纯 JSON 格式输出，只输出 JSON，不要有其他文字：
 {
   "instruction": "用户指令",
   "output": "助手回答"

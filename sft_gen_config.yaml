@@ -2,7 +2,7 @@
 # sft_gen_config.yaml
 
 api:
-  model: qwen-plus
+  model: deepseek-v4-flash
   api_key: ""
   base_url: ""
   lang: en

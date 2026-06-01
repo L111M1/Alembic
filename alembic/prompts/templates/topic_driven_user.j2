@@ -1,4 +1,6 @@
-user: Generate one SFT training sample for the topic "{{ topic }}". Output pure JSON only, no extra text:
+user: Generate one SFT training sample for the topic "{{ topic }}".{% if knowledge %} Use the following background knowledge to ensure accuracy:
+{{ knowledge }}{% endif %}
+Output pure JSON only, no extra text:
 {
   "instruction": "user instruction",
   "output": "assistant answer"
