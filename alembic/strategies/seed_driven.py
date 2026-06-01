@@ -37,5 +37,8 @@ class SeedDrivenStrategy(GenerationStrategy):
             prompt_id = f"seed:{i}"
             yield (prompt_id, messages)
 
+    def _build_metadata(self, prompt_id: str) -> dict:
+        return {"strategy": "seed_driven"}
+
     def estimated_count(self) -> int:
         return self._target_count

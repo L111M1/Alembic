@@ -31,7 +31,8 @@ class SelfInstructStrategy(GenerationStrategy):
         for prompt_id, messages in self.iter_prompts():
             try:
                 raw = self._call_api(messages)
-                samples = self._parse(raw)
+                meta = self._build_metadata(prompt_id)
+                samples = self._parse(raw, metadata=meta)
                 for s in samples:
                     if s.instruction and s.output:
                         self._seen_instructions.append(s.instruction)
@@ -40,3 +41,6 @@ class SelfInstructStrategy(GenerationStrategy):
                         logger.warning(f"[SelfInstruct] empty instruction/output for {prompt_id}, skipping")
             except Exception as e:
                 logger.error(f"[SelfInstruct] error for {prompt_id}: {e}")
+
+    def _build_metadata(self, prompt_id: str) -> dict:
+        return {"strategy": "self_instruct"}

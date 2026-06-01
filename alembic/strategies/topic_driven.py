@@ -71,5 +71,9 @@ class TopicDrivenStrategy(GenerationStrategy):
                 prompt_id = f"topic:{topic}:{i}"
                 yield (prompt_id, messages)
 
+    def _build_metadata(self, prompt_id: str) -> dict:
+        parts = prompt_id.split(":")
+        return {"strategy": "topic_driven", "topic": parts[1] if len(parts) >= 2 else ""}
+
     def estimated_count(self) -> int:
         return sum(cnt for _, cnt in self._plan)

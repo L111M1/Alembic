@@ -23,6 +23,10 @@ class GenerationStrategy(abc.ABC):
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         """yield (prompt_id, messages)"""
 
+    def _build_metadata(self, prompt_id: str) -> dict:
+        """Override to attach metadata (topic, strategy, etc.) to samples."""
+        return {}
+
     def generate(self) -> Iterator[GenerationSample]:
         if self._concurrency <= 1:
             yield from self._generate_sequential()
@@ -33,7 +37,8 @@ class GenerationStrategy(abc.ABC):
         for prompt_id, messages in self.iter_prompts():
             try:
                 raw = self._call_api(messages)
-                samples = self._parse(response_text=raw)
+                meta = self._build_metadata(prompt_id)
+                samples = self._parse(response_text=raw, metadata=meta)
                 for s in samples:
                     if s.instruction and s.output:
                         yield s
@@ -53,7 +58,8 @@ class GenerationStrategy(abc.ABC):
         with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
             futures = {}
             for prompt_id, messages in prompts:
-                future = executor.submit(self._call_and_parse, messages)
+                meta = self._build_metadata(prompt_id)
+                future = executor.submit(self._call_and_parse, messages, meta)
                 futures[future] = prompt_id
 
             for future in as_completed(futures):
@@ -70,9 +76,9 @@ class GenerationStrategy(abc.ABC):
                 except Exception as e:
                     logger.error(f"[{self._name}] generation error for {prompt_id}: {e}")
 
-    def _call_and_parse(self, messages: list[dict]) -> list[GenerationSample]:
+    def _call_and_parse(self, messages: list[dict], metadata: dict = None) -> list[GenerationSample]:
         raw = self._call_api(messages)
-        return self._parse(response_text=raw)
+        return self._parse(response_text=raw, metadata=metadata)
 
     def estimated_count(self) -> int:
         return len(self._params.get("topics", [])) * self._params.get("samples_per_topic", 1)
@@ -82,7 +88,7 @@ class GenerationStrategy(abc.ABC):
         max_tokens = self._params.get("max_tokens", 2048)
         return self._api.call(messages, temperature=temperature, max_tokens=max_tokens)
 
-    def _parse(self, response_text: str) -> list[GenerationSample]:
+    def _parse(self, response_text: str, metadata: dict = None) -> list[GenerationSample]:
         text = response_text.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -91,4 +97,7 @@ class GenerationStrategy(abc.ABC):
         data = json.loads(text)
         instruction = data.get("instruction", "").strip()
         output = data.get("output", "").strip()
-        return [GenerationSample(instruction=instruction, output=output)]
+        sample = GenerationSample(instruction=instruction, output=output)
+        if metadata:
+            sample.metadata = metadata
+        return [sample]

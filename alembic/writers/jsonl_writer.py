@@ -79,6 +79,8 @@ class JSONLWriter(BaseWriter):
             record = {"instruction": sample.instruction, "output": sample.output}
             if sample.system:
                 record["system"] = sample.system
+            if sample.metadata:
+                record["metadata"] = sample.metadata
             return record
 
     def _save_checkpoint(self) -> None:
