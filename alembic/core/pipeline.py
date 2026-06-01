@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from tqdm import tqdm
+
 from alembic.api.factory import create_client
 from alembic.config import AppConfig
 from alembic.core.types import GenerationStats
@@ -56,6 +58,7 @@ class Pipeline:
 
         try:
             gen = strategy.generate()
+            pbar = tqdm(total=max_count, desc="Generating", unit="sample")
             idx = 0
             while idx < max_count:
                 try:
@@ -69,12 +72,14 @@ class Pipeline:
                     stats.total_generated += 1
                     if writer:
                         writer.write(sample)
-                    observer.on_sample(idx + 1, True, "")
+                    pbar.set_postfix(kept=stats.total_generated, filtered=stats.total_filtered)
                 else:
                     stats.total_filtered += 1
-                    observer.on_sample(idx + 1, True, "")
+                    pbar.set_postfix(kept=stats.total_generated, filtered=stats.total_filtered)
 
+                pbar.update(1)
                 idx += 1
+            pbar.close()
         except KeyboardInterrupt:
             logger.warning("Interrupted by user")
         finally:

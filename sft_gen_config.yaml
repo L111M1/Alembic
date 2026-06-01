@@ -5,8 +5,8 @@ api:
   model: deepseek-v4-flash
   api_key: ""
   base_url: ""
-  lang: en
-  concurrency: 1               # number of parallel API calls
+  lang: zh
+  concurrency: 10              # number of parallel API calls
   params:
     temperature: 0.8
     max_tokens: 2048
@@ -17,18 +17,24 @@ strategies:
   - type: topic_driven
     weight: 0.5
     topics:
-      - topic: "Python programming basics"
+      - topic: "Python 编程基础"
         weight: 3
-      - topic: "Machine learning and deep learning"
+        knowledge: "Python 是动态类型语言，支持面向对象、函数式编程。3.12+ 支持类型注解和模式匹配。常用框架：FastAPI、Django、Flask。包管理工具：pip、uv。"
+      - topic: "机器学习与深度学习"
         weight: 3
-      - topic: "Data structures and algorithms"
+        knowledge: "三大范式：监督学习、无监督学习、强化学习。常用算法：线性回归、随机森林、神经网络、Transformer。评估指标：准确率、精确率、召回率、F1、AUC-ROC。主流框架：PyTorch、scikit-learn、XGBoost。"
+      - topic: "数据结构与算法"
         weight: 2
-      - topic: "Web/API development"
+        knowledge: "基础数据结构：数组、链表、栈、队列、哈希表、树、图。排序算法：快排、归并、堆排。查找：二分查找、BFS、DFS。复杂度分析：时间/空间复杂度 Big-O。"
+      - topic: "Web 与 API 开发"
         weight: 2
-      - topic: "Database and SQL"
+        knowledge: "RESTful 设计原则：资源路径、HTTP 方法、状态码。认证方式：JWT、OAuth2.0。数据库：ORM 与原生 SQL。部署：Docker、Nginx 反向代理。"
+      - topic: "数据库与 SQL"
         weight: 1
-      - topic: "Linux and DevOps"
+        knowledge: "关系型：MySQL、PostgreSQL，ACID 事务，索引优化。非关系型：Redis（缓存）、MongoDB（文档）。SQL 基础：JOIN、GROUP BY、子查询、窗口函数。"
+      - topic: "Linux 与 DevOps"
         weight: 1
+        knowledge: "常用命令：文件操作、进程管理、网络排查。Shell 脚本：变量、循环、条件判断。CI/CD：GitHub Actions、GitLab CI。容器化：Dockerfile 编写、docker-compose 编排。"
     total_count: 100
 
   - type: seed_driven
