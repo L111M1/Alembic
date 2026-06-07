@@ -4,7 +4,9 @@ from pathlib import Path
 
 from alembic.core.pipeline import Pipeline
 from alembic.cleaner import DatasetCleaner
-from alembic.config import CleanerConfig, AppConfig
+from alembic.scoring import DatasetScorer
+from alembic.config import CleanerConfig, AppConfig, ScoringConfig
+from alembic.api.factory import create_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +65,41 @@ def clean(input_file: str, output: str, config: str):
     print("\n=== Clean Complete ===")
     print(f"  Kept:    {kept}")
     print(f"  Dropped: {dropped}")
+    print(f"  Output:  {output}")
+
+
+@main.command()
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option("--output", "-o", default=None, help="Output file path (default: input_scored.jsonl)")
+@click.option("--config", "-c", default=None, help="YAML config with scoring section")
+@click.option("--concurrency", "-n", type=int, default=None, help="Override concurrency")
+def score(input_file: str, output: str, config: str, concurrency: int):
+    """Score a JSONL dataset using an LLM judge"""
+    if config:
+        app_cfg = AppConfig.from_yaml(config)
+        scoring_cfg = app_cfg.scoring
+    else:
+        scoring_cfg = ScoringConfig()
+
+    if concurrency is not None:
+        scoring_cfg.concurrency = concurrency
+
+    api = create_client(
+        model=scoring_cfg.model,
+        api_key=scoring_cfg.api_key,
+        base_url=scoring_cfg.base_url,
+        retry=scoring_cfg.retry,
+    )
+
+    if output is None:
+        p = Path(input_file)
+        output = str(p.parent / f"{p.stem}_scored.jsonl")
+
+    scorer = DatasetScorer(scoring_cfg)
+    scored, failed = scorer.score_file(api, input_file, output)
+    print("\n=== Scoring Complete ===")
+    print(f"  Scored:  {scored}")
+    print(f"  Failed:  {failed}")
     print(f"  Output:  {output}")
 
 

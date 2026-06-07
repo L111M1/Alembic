@@ -83,6 +83,9 @@ python -m alembic.cli generate --config sft_gen_config.yaml --dry-run --count 5
 # 独立清洗已有数据集
 python -m alembic.cli clean ./raw_data.jsonl
 
+# LLM 打分
+python -m alembic.cli score ./generated_sft.jsonl
+
 # 查看模板
 python -m alembic.cli list-templates
 ```
@@ -116,6 +119,38 @@ python -m alembic.cli clean input.jsonl -o output.jsonl
 
 清洗步骤：HTML 标签去除 → URL 去除 → 邮箱去除 → 长度过滤 → 特殊字符过滤 → 去重
 
+## 数据打分
+
+`scoring` 模块使用 LLM-as-Judge 对数据集进行多维度质量打分，维度完全由用户配置：
+
+```bash
+# 默认 4 维度打分
+python -m alembic.cli score input.jsonl -o scored.jsonl
+
+# 通过 YAML 配置自定义维度和独立 judge 模型
+python -m alembic.cli score input.jsonl --config sft_gen_config.yaml --concurrency 5
+```
+
+YAML 配置示例：
+
+```yaml
+scoring:
+  model: gpt-4o              # 独立 judge 模型（可选，默认复用 api.model）
+  lang: zh                   # prompt 语言（zh/en）
+  concurrency: 3             # 并行打分并发数
+  dimensions:                # 自定义打分维度
+    - name: correctness
+      label: "准确性"
+      description: "答案是否准确无误"
+      max_score: 10
+    - name: helpfulness
+      label: "实用性"
+      description: "答案是否有实际帮助"
+      max_score: 10
+```
+
+输出每条数据附加 `scores` 和 `total_score` 字段。
+
 ## API 支持
 
 所有 OpenAI 兼容接口。配置或环境变量设置：
@@ -132,12 +167,21 @@ alembic/
 ├── api/                   # API 适配层
 ├── cleaner/               # 数据清洗
 ├── prompts/               # 提示词系统
+├── scoring/               # LLM 打分
 ├── strategies/            # 生成策略
 ├── quality/               # 质量校验
 ├── writers/               # 数据输出
 ├── core/                  # 管线编排
 ├── config.py              # 配置解析
 └── cli.py                 # CLI 入口
+tests/                     # pytest 测试
+```
+
+## 测试
+
+```bash
+pip install pytest
+pytest tests/ -v
 ```
 
 ## License

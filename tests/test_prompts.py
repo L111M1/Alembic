@@ -1,0 +1,37 @@
+from alembic.prompts.builder import PromptBuilder
+
+
+class TestPromptBuilder:
+    def test_build_basic_messages(self):
+        builder = PromptBuilder()
+        builder.system("You are helpful")
+        builder.user("Hello")
+        msgs = builder.build()
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[0]["content"] == "You are helpful"
+        assert msgs[1]["role"] == "user"
+        assert msgs[1]["content"] == "Hello"
+
+    def test_from_template(self):
+        builder = PromptBuilder()
+        builder.from_template("topic_driven_system.j2")
+        builder.from_template("topic_driven_user.j2", topic="Python")
+        msgs = builder.build()
+        assert len(msgs) == 2
+        assert "Python" in msgs[1]["content"]
+
+    def test_from_template_zh_fallback(self):
+        builder = PromptBuilder(lang="zh")
+        builder.from_template("topic_driven_system.j2")
+        msgs = builder.build()
+        assert len(msgs) == 1
+
+    def test_parse_chat_messages_multirole(self):
+        builder = PromptBuilder()
+        builder.system("role1")
+        builder.user("role2")
+        builder.assistant("role3")
+        msgs = builder.build()
+        assert len(msgs) == 3
+        assert msgs[2]["role"] == "assistant"

@@ -61,11 +61,33 @@ class CleanerConfig:
 
 
 @dataclass
+class ScoringConfig:
+    enabled: bool = False
+    model: str = "gpt-4o"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    lang: str = "en"
+    concurrency: int = 3
+    dimensions: list = field(default_factory=lambda: [
+        {"name": "correctness", "label": "准确性", "description": "答案是否准确无误，事实是否正确", "max_score": 10},
+        {"name": "helpfulness", "label": "实用性", "description": "答案是否对用户有实际帮助", "max_score": 10},
+        {"name": "completeness", "label": "完整性", "description": "答案是否完整全面，无遗漏", "max_score": 10},
+        {"name": "clarity", "label": "清晰度", "description": "表达是否清晰易懂，逻辑是否通顺", "max_score": 10},
+    ])
+    params: dict = field(default_factory=dict)
+    retry: dict = field(default_factory=dict)
+    min_total_score: float = 0.0
+    output_path: Optional[str] = None
+    field_map: Optional[dict] = None
+
+
+@dataclass
 class AppConfig:
     api: APIConfig = field(default_factory=APIConfig)
     strategies: list[StrategyConfig] = field(default_factory=list)
     quality: QualityConfig = field(default_factory=QualityConfig)
     cleaner: CleanerConfig = field(default_factory=CleanerConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     dry_run: bool = False
     count: int = 100
@@ -84,6 +106,7 @@ class AppConfig:
         strategies_data = data.get("strategies", [])
         quality_data = data.get("quality", {})
         cleaner_data = data.get("cleaner", {})
+        scoring_data = data.get("scoring", {})
         output_data = data.get("output", {})
 
         api_cfg = APIConfig(
@@ -135,6 +158,26 @@ class AppConfig:
             field_map=cleaner_data.get("field_map"),
         )
 
+        scoring_cfg = ScoringConfig(
+            enabled=scoring_data.get("enabled", False),
+            model=scoring_data.get("model", "gpt-4o"),
+            api_key=scoring_data.get("api_key"),
+            base_url=scoring_data.get("base_url"),
+            lang=scoring_data.get("lang", "en"),
+            concurrency=int(scoring_data.get("concurrency", 3)),
+            dimensions=scoring_data.get("dimensions", [
+                {"name": "correctness", "label": "准确性", "description": "答案是否准确无误，事实是否正确", "max_score": 10},
+                {"name": "helpfulness", "label": "实用性", "description": "答案是否对用户有实际帮助", "max_score": 10},
+                {"name": "completeness", "label": "完整性", "description": "答案是否完整全面，无遗漏", "max_score": 10},
+                {"name": "clarity", "label": "清晰度", "description": "表达是否清晰易懂，逻辑是否通顺", "max_score": 10},
+            ]),
+            params=scoring_data.get("params", {}),
+            retry=scoring_data.get("retry", {}),
+            min_total_score=float(scoring_data.get("min_total_score", 0.0)),
+            output_path=scoring_data.get("output_path"),
+            field_map=scoring_data.get("field_map"),
+        )
+
         output_cfg = OutputConfig(
             path=output_data.get("path", "./generated_sft.jsonl"),
             format=output_data.get("format", "alpaca"),
@@ -147,6 +190,7 @@ class AppConfig:
             strategies=strategies,
             quality=quality_cfg,
             cleaner=cleaner_cfg,
+            scoring=scoring_cfg,
             output=output_cfg,
             dry_run=data.get("dry_run", False),
             count=int(data.get("count", 100)),

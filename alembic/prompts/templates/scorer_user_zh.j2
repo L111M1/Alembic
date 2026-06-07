@@ -1,0 +1,9 @@
+user: 请对以下问答对进行打分：
+
+**问题/指令：**
+{{ instruction }}
+
+**回答/输出：**
+{{ output }}
+
+输出一个 JSON 对象，包含以下维度的分数：{{ dim_names }}。示例格式：{"correctness": 8, "helpfulness": 7, "completeness": 6, "clarity": 9}
