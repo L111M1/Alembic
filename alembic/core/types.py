@@ -3,17 +3,23 @@ from dataclasses import dataclass, field
 
 @dataclass
 class SeedSample:
-    instruction: str
-    output: str
+    instruction: str = ""
+    output: str = ""
     system: str = ""
+    messages: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class GenerationSample:
-    instruction: str
-    output: str
+    instruction: str = ""
+    output: str = ""
     system: str = ""
+    messages: list[dict] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+
+    @property
+    def is_multi_turn(self) -> bool:
+        return len(self.messages) > 0
 
 
 @dataclass

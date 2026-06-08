@@ -36,12 +36,21 @@ def generate(config: str, dry_run: bool, count: int, seed: int):
         pipeline._config.random_seed = seed
 
     stats = pipeline.run()
+    scfg = pipeline._config.scoring
     print("\n=== Generation Complete ===")
     print(f"  Attempted:  {stats.total_attempted}")
     print(f"  Generated:  {stats.total_generated}")
     print(f"  Filtered:   {stats.total_filtered}")
     if not dry_run:
-        print(f"  Output:     {pipeline._config.output.path}")
+        out = pipeline._config.output.path
+        print(f"  Output:     {out}")
+        cleaned = out.replace(".jsonl", "_cleaned.jsonl") if not out.endswith("_cleaned.jsonl") else out
+        sc_enabled = scfg.enabled and scfg.dimensions
+        if sc_enabled:
+            print(f"  Scored:     {scfg.output_path or cleaned.replace('.jsonl', '_scored.jsonl')}")
+            if scfg.min_total_score > 0:
+                p = scfg.output_path or cleaned.replace('.jsonl', '_scored.jsonl')
+                print(f"  Filtered:   {p.replace('_scored.jsonl', '_scored_filtered.jsonl')}")
 
 
 @main.command()

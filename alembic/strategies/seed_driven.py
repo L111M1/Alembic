@@ -20,20 +20,26 @@ class SeedDrivenStrategy(GenerationStrategy):
             self._seeds = load_seeds(seed_file, field_map)
         self._example_num = max(1, min(int(params.get("example_num", 3)), len(self._seeds)))
         self._target_count = int(params.get("target_count", 10))
+        self._multi_turn = bool(params.get("multi_turn", False))
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         if not self._seeds or self._example_num == 0:
             logger.warning("No seeds loaded, skipping SeedDrivenStrategy")
             return
+        suffix = "_mt" if self._multi_turn else ""
         for i in range(self._target_count):
             chosen = random.sample(self._seeds, min(self._example_num, len(self._seeds)))
             examples_text_parts = []
             for j, seed in enumerate(chosen, 1):
-                examples_text_parts.append(f"Example {j}:\n  instruction: {seed.instruction}\n  output: {seed.output}")
+                if seed.messages:
+                    turns = "\n    ".join(f"[{m['role']}]: {m['content']}" for m in seed.messages)
+                    examples_text_parts.append(f"Example {j}:\n    {turns}")
+                else:
+                    examples_text_parts.append(f"Example {j}:\n  instruction: {seed.instruction}\n  output: {seed.output}")
             examples_text = "\n\n".join(examples_text_parts)
             builder = PromptBuilder(lang=self._lang)
-            builder.from_template("seed_system.j2")
-            builder.from_template("seed_user.j2", examples=examples_text)
+            builder.from_template(f"seed_system{suffix}.j2")
+            builder.from_template(f"seed_user{suffix}.j2", examples=examples_text)
             messages = builder.build()
             prompt_id = f"seed:{i}"
             yield (prompt_id, messages)

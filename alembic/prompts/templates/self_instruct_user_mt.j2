@@ -1,0 +1,12 @@
+user: Come up with and generate one brand new multi-turn SFT training sample. Ensure it differs from existing data below:
+{{ existing_instructions }}
+
+Generate one new multi-turn conversation (2-4 exchanges). Output pure JSON only, no extra text:
+{
+  "messages": [
+    {"role": "user", "content": "newly conceived user question"},
+    {"role": "assistant", "content": "corresponding high-quality answer"},
+    {"role": "user", "content": "natural follow-up"},
+    {"role": "assistant", "content": "follow-up answer"}
+  ]
+}

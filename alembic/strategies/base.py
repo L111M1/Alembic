@@ -41,7 +41,7 @@ class GenerationStrategy(abc.ABC):
             if samples is None:
                 continue
             for s in samples:
-                if s.instruction and s.output:
+                if (s.instruction and s.output) or s.is_multi_turn:
                     yield s
                 else:
                     logger.warning(f"[{self._name}] empty instruction/output, skipping")
@@ -75,7 +75,7 @@ class GenerationStrategy(abc.ABC):
                 try:
                     samples = future.result()
                     for s in samples:
-                        if s.instruction and s.output:
+                        if (s.instruction and s.output) or s.is_multi_turn:
                             yield s
                         else:
                             logger.warning(f"[{self._name}] empty instruction/output, skipping")
@@ -113,6 +113,14 @@ class GenerationStrategy(abc.ABC):
             lines = [line for line in lines if not line.strip().startswith("```")]
             text = "\n".join(lines).strip()
         data = json.loads(text)
+
+        if "messages" in data:
+            messages = data["messages"]
+            sample = GenerationSample(messages=messages)
+            if metadata:
+                sample.metadata = metadata
+            return [sample]
+
         instruction = data.get("instruction", "").strip()
         output = data.get("output", "").strip()
         sample = GenerationSample(instruction=instruction, output=output)

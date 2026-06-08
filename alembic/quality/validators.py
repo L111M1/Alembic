@@ -38,8 +38,14 @@ class LengthValidator(QualityValidator):
         self._out_max = config.output_max_len
 
     def _do_validate(self, sample: GenerationSample) -> bool:
-        ilen = len(sample.instruction)
-        olen = len(sample.output)
+        if sample.is_multi_turn:
+            inst = " ".join(m["content"] for m in sample.messages if m.get("role") == "user")
+            out = " ".join(m["content"] for m in sample.messages if m.get("role") == "assistant")
+        else:
+            inst = sample.instruction
+            out = sample.output
+        ilen = len(inst)
+        olen = len(out)
         if ilen < self._inst_min or ilen > self._inst_max:
             return False
         if olen < self._out_min or olen > self._out_max:
@@ -55,7 +61,12 @@ class TruncationValidator(QualityValidator):
     def _do_validate(self, sample: GenerationSample) -> bool:
         if not self._enabled:
             return True
-        output = sample.output.strip().rstrip('"').rstrip("'").rstrip("`")
+        if sample.is_multi_turn:
+            out_texts = [m["content"] for m in sample.messages if m.get("role") == "assistant"]
+            output = " ".join(out_texts) if out_texts else ""
+        else:
+            output = sample.output
+        output = output.strip().rstrip('"').rstrip("'").rstrip("`")
         if len(output) < 10:
             return False
         if output.endswith((".", "!", "?", ")", "]", "\n")):
@@ -75,9 +86,11 @@ class DedupValidator(QualityValidator):
     def _do_validate(self, sample: GenerationSample) -> bool:
         if not self._enabled:
             return True
-        key = hashlib.sha256(
-            (sample.instruction.strip().lower() + sample.output.strip().lower()).encode("utf-8")
-        ).hexdigest()
+        if sample.is_multi_turn:
+            text = " ".join(m["content"].strip().lower() for m in sample.messages)
+        else:
+            text = sample.instruction.strip().lower() + sample.output.strip().lower()
+        key = hashlib.sha256(text.encode("utf-8")).hexdigest()
         if key in self._seen:
             return False
         self._seen.add(key)

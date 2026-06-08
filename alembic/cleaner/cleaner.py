@@ -48,10 +48,13 @@ class DatasetCleaner:
         return self._cleaned_count, self._dropped_count
 
     def _clean_sample(self, sample: dict) -> Optional[dict]:
+        cfg = self._config
+
+        if "messages" in sample and isinstance(sample["messages"], list):
+            return self._clean_multi_turn(sample)
+
         inst = sample.get("instruction", "")
         out = sample.get("output", "") or sample.get("response", "")
-
-        cfg = self._config
 
         inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
         out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
@@ -84,6 +87,45 @@ class DatasetCleaner:
             self._seen_keys.add(key)
 
         result = {"instruction": inst, "output": out}
+        if sample.get("system"):
+            result["system"] = sample["system"]
+        if sample.get("metadata"):
+            result["metadata"] = sample["metadata"]
+        return result
+
+    def _clean_multi_turn(self, sample: dict) -> Optional[dict]:
+        cfg = self._config
+        messages = sample["messages"]
+        cleaned_messages = []
+        for m in messages:
+            content = clean_text(m.get("content", ""), cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
+            cleaned_messages.append({"role": m.get("role", ""), "content": content.strip()})
+
+        all_text = " ".join(m["content"] for m in cleaned_messages)
+        ilen = sum(len(m["content"]) for m in cleaned_messages if m.get("role") == "user")
+        olen = sum(len(m["content"]) for m in cleaned_messages if m.get("role") == "assistant")
+        if ilen < cfg.instruction_min_len or ilen > cfg.instruction_max_len:
+            return None
+        if olen < cfg.output_min_len or olen > cfg.output_max_len:
+            return None
+
+        for m in cleaned_messages:
+            if special_char_ratio(m["content"]) > cfg.max_special_char_ratio:
+                return None
+
+        out_text = " ".join(m["content"] for m in cleaned_messages if m.get("role") == "assistant")
+        if word_repetition_ratio(out_text) > cfg.max_word_repetition_ratio:
+            return None
+        if char_repetition_ratio(out_text) > cfg.max_char_repetition_ratio:
+            return None
+
+        if cfg.dedup:
+            key = compute_dedup_key(all_text)
+            if key in self._seen_keys:
+                return None
+            self._seen_keys.add(key)
+
+        result = {"messages": cleaned_messages}
         if sample.get("system"):
             result["system"] = sample["system"]
         if sample.get("metadata"):
@@ -130,9 +172,12 @@ class DatasetCleaner:
         cfg = self._config
         if cfg.field_map:
             sample = {v: sample.get(k, "") for k, v in cfg.field_map.items()}
+
+        if "messages" in sample and isinstance(sample["messages"], list):
+            return self._clean_multi_turn(sample)
+
         inst = sample.get("instruction", "")
         out = sample.get("output", "") or sample.get("response", "")
-        cfg = self._config
 
         inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
         out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
@@ -170,7 +215,7 @@ class DatasetCleaner:
             api_key=self._config.embedding_api_key,
             base_url=self._config.embedding_base_url,
         )
-        texts = [s["instruction"] + " " + s["output"] for s in candidates]
+        texts = [self._sample_text(s) for s in candidates]
         batch_size = self._config.embedding_batch_size
         batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
 
@@ -199,6 +244,11 @@ class DatasetCleaner:
 
         kept = [s for s, m in zip(candidates, keep_mask) if m]
         return kept
+
+    def _sample_text(self, sample: dict) -> str:
+        if "messages" in sample:
+            return " ".join(m.get("content", "") for m in sample["messages"])
+        return sample.get("instruction", "") + " " + sample.get("output", "")
 
     @property
     def stats(self) -> tuple[int, int]:

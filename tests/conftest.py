@@ -18,6 +18,21 @@ class FakeAPI(BaseAPIClient):
         })
 
 
+class FakeMultiTurnAPI(BaseAPIClient):
+    def supports_json_mode(self):
+        return True
+
+    def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        return json.dumps({
+            "messages": [
+                {"role": "user", "content": "What is Python?"},
+                {"role": "assistant", "content": "Python is a programming language."},
+                {"role": "user", "content": "What can I build with it?"},
+                {"role": "assistant", "content": "You can build web apps, ML models, and more."},
+            ]
+        })
+
+
 class FakeScoreAPI(BaseAPIClient):
     def supports_json_mode(self):
         return True
@@ -34,6 +49,11 @@ class FakeScoreAPI(BaseAPIClient):
 @pytest.fixture
 def fake_api():
     return FakeAPI()
+
+
+@pytest.fixture
+def fake_multi_turn_api():
+    return FakeMultiTurnAPI()
 
 
 @pytest.fixture
@@ -57,7 +77,7 @@ def temp_jsonl():
     for p in files:
         if os.path.exists(p):
             os.unlink(p)
-        for suffix in ("_cleaned.jsonl", "_scored.jsonl"):
+        for suffix in ("_cleaned.jsonl", "_scored.jsonl", "_scored_filtered.jsonl", "_report.json"):
             alt = p.replace(".jsonl", suffix)
             if os.path.exists(alt):
                 os.unlink(alt)
@@ -69,6 +89,18 @@ def seed_jsonl(temp_jsonl):
         json.dumps({"instruction": "what is python", "output": "Python is a programming language."}),
         json.dumps({"messages": [{"role": "user", "content": "explain ML"}, {"role": "assistant", "content": "ML is a subset of AI."}]}),
         json.dumps({"instruction": "how to use git", "response": "Use git clone, git commit, git push."}),
+    ])
+
+
+@pytest.fixture
+def multi_turn_seed_jsonl(temp_jsonl):
+    return temp_jsonl([
+        json.dumps({"messages": [
+            {"role": "user", "content": "What is Python?"},
+            {"role": "assistant", "content": "Python is a programming language."},
+            {"role": "user", "content": "Is it good for web dev?"},
+            {"role": "assistant", "content": "Yes, with Django or Flask."},
+        ]}),
     ])
 
 
@@ -87,9 +119,21 @@ def sample_config_yaml():
             {"type": "seed_driven", "weight": 0.3, "seed_file": "./seeds.jsonl", "example_num": 2, "target_count": 5},
             {"type": "self_instruct", "weight": 0.2, "target_count": 5},
         ],
+        "scoring": {
+            "enabled": False,
+            "model": "gpt-4o",
+            "lang": "zh",
+            "concurrency": 3,
+            "dimensions": [
+                {"name": "correctness", "label": "准确性", "max_score": 10},
+                {"name": "helpfulness", "label": "实用性", "max_score": 10},
+                {"name": "completeness", "label": "完整性", "max_score": 10},
+                {"name": "clarity", "label": "清晰度", "max_score": 10},
+            ],
+        },
         "quality": {"instruction_min_len": 5, "instruction_max_len": 2000, "output_min_len": 10, "output_max_len": 6000, "dedup": True},
         "cleaner": {"remove_html": True, "remove_urls": True, "remove_emails": True, "dedup": True},
-        "output": {"path": "./test_output.jsonl", "format": "alpaca"},
+        "output": {"path": "./test_output.jsonl", "format": "alpaca", "multi_turn": False},
     }
     fd, path = tempfile.mkstemp(suffix=".yaml")
     with os.fdopen(fd, "w", encoding="utf-8") as f:

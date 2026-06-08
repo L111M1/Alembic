@@ -34,6 +34,7 @@ class QualityConfig:
 class OutputConfig:
     path: str = "./generated_sft.jsonl"
     format: str = "alpaca"
+    multi_turn: bool = False
     checkpoint: bool = False
     checkpoint_path: Optional[str] = None
 
@@ -68,12 +69,7 @@ class ScoringConfig:
     base_url: Optional[str] = None
     lang: str = "en"
     concurrency: int = 3
-    dimensions: list = field(default_factory=lambda: [
-        {"name": "correctness", "label": "准确性", "description": "答案是否准确无误，事实是否正确", "max_score": 10},
-        {"name": "helpfulness", "label": "实用性", "description": "答案是否对用户有实际帮助", "max_score": 10},
-        {"name": "completeness", "label": "完整性", "description": "答案是否完整全面，无遗漏", "max_score": 10},
-        {"name": "clarity", "label": "清晰度", "description": "表达是否清晰易懂，逻辑是否通顺", "max_score": 10},
-    ])
+    dimensions: list = field(default_factory=list)
     params: dict = field(default_factory=dict)
     retry: dict = field(default_factory=dict)
     min_total_score: float = 0.0
@@ -165,12 +161,7 @@ class AppConfig:
             base_url=scoring_data.get("base_url"),
             lang=scoring_data.get("lang", "en"),
             concurrency=int(scoring_data.get("concurrency", 3)),
-            dimensions=scoring_data.get("dimensions", [
-                {"name": "correctness", "label": "准确性", "description": "答案是否准确无误，事实是否正确", "max_score": 10},
-                {"name": "helpfulness", "label": "实用性", "description": "答案是否对用户有实际帮助", "max_score": 10},
-                {"name": "completeness", "label": "完整性", "description": "答案是否完整全面，无遗漏", "max_score": 10},
-                {"name": "clarity", "label": "清晰度", "description": "表达是否清晰易懂，逻辑是否通顺", "max_score": 10},
-            ]),
+            dimensions=scoring_data.get("dimensions", []),
             params=scoring_data.get("params", {}),
             retry=scoring_data.get("retry", {}),
             min_total_score=float(scoring_data.get("min_total_score", 0.0)),
@@ -181,6 +172,7 @@ class AppConfig:
         output_cfg = OutputConfig(
             path=output_data.get("path", "./generated_sft.jsonl"),
             format=output_data.get("format", "alpaca"),
+            multi_turn=output_data.get("multi_turn", False),
             checkpoint=output_data.get("checkpoint", False),
             checkpoint_path=output_data.get("checkpoint_path"),
         )

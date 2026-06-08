@@ -9,6 +9,9 @@ class TestAppConfig:
         assert cfg.cleaner.remove_html is True
         assert cfg.cleaner.dedup is True
         assert cfg.quality.output_min_len == 10
+        assert cfg.scoring.enabled is False
+        assert len(cfg.scoring.dimensions) == 4
+        assert cfg.output.multi_turn is False
 
     def test_api_config_defaults(self):
         cfg = AppConfig()

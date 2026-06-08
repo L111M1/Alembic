@@ -1,0 +1,13 @@
+user: Below are some example training samples. Reference their style and format, and generate one brand new, different multi-turn SFT training sample.
+
+{{ examples }}
+
+Generate one new multi-turn conversation (2-4 exchanges). Output pure JSON only, no extra text:
+{
+  "messages": [
+    {"role": "user", "content": "new user question"},
+    {"role": "assistant", "content": "corresponding answer"},
+    {"role": "user", "content": "follow-up question"},
+    {"role": "assistant", "content": "follow-up answer"}
+  ]
+}

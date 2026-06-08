@@ -265,12 +265,64 @@ cleaner:
   embedding_batch_size: 20
 ```
 
+## LLM 评分
+
+用于 `score` 命令，调用 LLM 对生成数据进行多维度打分。所有维度通过 YAML 配置文件定义。
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `enabled` | bool | 否 | `false` | 生成后是否自动评分 |
+| `model` | string | 否 | `gpt-4o` | 评分模型 |
+| `api_key` | string | 否 | — | 评分 API 密钥（不填则复用 `api.api_key`） |
+| `base_url` | string | 否 | — | 评分 API 端点（不填则复用 `api.base_url`） |
+| `lang` | string | 否 | `en` | 评分提示语言（zh/en） |
+| `concurrency` | int | 否 | `3` | 并行评分数 |
+| `dimensions` | array | 是 | `[]` | 评分维度列表，每项含 `name`、`label`、`description`、`max_score` |
+| `params` | dict | 否 | `{}` | LLM 调用参数 |
+| `retry` | dict | 否 | `{}` | 重试配置 |
+| `min_total_score` | float | 否 | `0.0` | 最低总分阈值，低于此值的样本被过滤 |
+| `output_path` | string | 否 | — | 评分结果输出路径 |
+| `field_map` | dict | 否 | — | 字段映射 |
+
+```yaml
+# LLM 评分配置示例
+scoring:
+  enabled: true
+  model: gpt-4o
+  lang: zh
+  concurrency: 3
+  dimensions:
+    - name: correctness
+      label: "准确性"
+      description: "答案是否准确无误，事实是否正确"
+      max_score: 10
+    - name: helpfulness
+      label: "实用性"
+      description: "答案是否对用户有实际帮助"
+      max_score: 10
+    - name: completeness
+      label: "完整性"
+      description: "答案是否完整全面，无遗漏"
+      max_score: 10
+    - name: clarity
+      label: "清晰度"
+      description: "表达是否清晰易懂，逻辑是否通顺"
+      max_score: 10
+  params:
+    temperature: 0.3
+    max_tokens: 1024
+  retry:
+    max_retries: 3
+  min_total_score: 0.0
+```
+
 ## 输出配置
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `path` | string | 输出文件路径 |
 | `format` | string | 输出格式（alpaca/sharegpt） |
+| `multi_turn` | bool | 是否生成多轮对话（2-4轮） |
 | `checkpoint` | bool | 是否启用断点续传 |
 
 ```yaml
@@ -278,6 +330,7 @@ cleaner:
 output:
   path: ./generated_sft.jsonl
   format: alpaca
+  multi_turn: false
   checkpoint: false
 ```
 

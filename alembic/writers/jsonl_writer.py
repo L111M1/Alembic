@@ -60,6 +60,25 @@ class JSONLWriter(BaseWriter):
         return self._count
 
     def _format_sample(self, sample: GenerationSample) -> dict:
+        if sample.is_multi_turn:
+            messages = sample.messages
+            if self._format == "sharegpt":
+                conversations = []
+                for m in messages:
+                    role = m.get("role", "")
+                    if role == "system":
+                        conversations.append({"from": "system", "value": m.get("content", "")})
+                    elif role == "user":
+                        conversations.append({"from": "human", "value": m.get("content", "")})
+                    elif role == "assistant":
+                        conversations.append({"from": "gpt", "value": m.get("content", "")})
+                record = {"conversations": conversations}
+            else:
+                record = {"messages": messages}
+            if sample.metadata:
+                record["metadata"] = sample.metadata
+            return record
+
         if self._format == "chatml":
             messages = []
             if sample.system:

@@ -6,6 +6,14 @@ from alembic.config import ScoringConfig
 from alembic.scoring import DatasetScorer
 
 
+_DEFAULT_DIMS = [
+    {"name": "correctness", "label": "Correctness", "description": "Is the answer accurate and factually correct", "max_score": 10},
+    {"name": "helpfulness", "label": "Helpfulness", "description": "Is the answer practically helpful", "max_score": 10},
+    {"name": "completeness", "label": "Completeness", "description": "Is the answer comprehensive without omissions", "max_score": 10},
+    {"name": "clarity", "label": "Clarity", "description": "Is the expression clear and logically coherent", "max_score": 10},
+]
+
+
 class TestScoringConfig:
     def test_defaults(self):
         cfg = ScoringConfig()
@@ -16,12 +24,7 @@ class TestScoringConfig:
 
     def test_default_dimensions(self):
         cfg = ScoringConfig()
-        assert len(cfg.dimensions) == 4
-        names = [d["name"] for d in cfg.dimensions]
-        assert names == ["correctness", "helpfulness", "completeness", "clarity"]
-        for d in cfg.dimensions:
-            assert "max_score" in d
-            assert d["max_score"] == 10
+        assert len(cfg.dimensions) == 0
 
     def test_custom_dimensions(self):
         dims = [
@@ -54,7 +57,7 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, failed = scorer.score_file(fake_score_api, path, out)
 
@@ -81,7 +84,7 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, failed = scorer.score_file(fake_score_api, path, out)
 
@@ -93,7 +96,7 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig(field_map={"question": "instruction", "answer": "output"})
+        cfg = ScoringConfig(field_map={"question": "instruction", "answer": "output"}, dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, _ = scorer.score_file(fake_score_api, path, out)
 
@@ -110,7 +113,7 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, _ = scorer.score_file(fake_score_api, path, out)
 
@@ -122,7 +125,7 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig(lang="zh")
+        cfg = ScoringConfig(lang="zh", dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, _ = scorer.score_file(fake_score_api, path, out)
 
@@ -132,7 +135,7 @@ class TestDatasetScorer:
         path = temp_jsonl([
             json.dumps({"instruction": "x", "output": "y"}),
         ])
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, _ = scorer.score_file(fake_score_api, path)
 
@@ -189,7 +192,7 @@ class TestDatasetScorer:
         path = temp_jsonl([])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, failed = scorer.score_file(fake_score_api, path, out)
 
@@ -206,8 +209,49 @@ class TestDatasetScorer:
         ])
         out = path.replace(".jsonl", "_scored.jsonl")
 
-        cfg = ScoringConfig()
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
         scorer = DatasetScorer(cfg)
         scored, _ = scorer.score_file(fake_score_api, path, out)
 
         assert scored == 0
+
+
+class TestMultiTurnScorer:
+    def test_score_multi_turn_jsonl(self, fake_score_api, temp_jsonl):
+        path = temp_jsonl([
+            json.dumps({"messages": [
+                {"role": "user", "content": "What is Python?"},
+                {"role": "assistant", "content": "Python is a programming language."},
+            ]}),
+        ])
+        out = path.replace(".jsonl", "_scored.jsonl")
+
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
+        scorer = DatasetScorer(cfg)
+        scored, failed = scorer.score_file(fake_score_api, path, out)
+
+        assert scored == 1
+        assert failed == 0
+
+        with open(out, "r", encoding="utf-8") as f:
+            s1 = json.loads(f.readline())
+        assert "scores" in s1
+        assert "total_score" in s1
+        assert s1["scores"]["correctness"] == 9
+
+    def test_score_mixed_single_and_multi_turn(self, fake_score_api, temp_jsonl):
+        path = temp_jsonl([
+            json.dumps({"instruction": "what is python", "output": "A language."}),
+            json.dumps({"messages": [
+                {"role": "user", "content": "Explain ML."},
+                {"role": "assistant", "content": "ML is AI subset."},
+            ]}),
+        ])
+        out = path.replace(".jsonl", "_scored.jsonl")
+
+        cfg = ScoringConfig(dimensions=_DEFAULT_DIMS)
+        scorer = DatasetScorer(cfg)
+        scored, failed = scorer.score_file(fake_score_api, path, out)
+
+        assert scored == 2
+        assert failed == 0

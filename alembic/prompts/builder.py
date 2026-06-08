@@ -104,19 +104,11 @@ def load_seeds(seed_file: str, field_map: Optional[dict] = None) -> list[SeedSam
                 item = json.loads(line)
                 if field_map:
                     item = {v: item.get(k, "") for k, v in field_map.items()}
-                if "messages" in item:
-                    msgs = item["messages"]
-                    user_msg = ""
-                    assistant_msg = ""
-                    system_msg = ""
-                    for m in msgs:
-                        if m["role"] == "user":
-                            user_msg = m["content"]
-                        elif m["role"] == "assistant":
-                            assistant_msg = m["content"]
-                        elif m["role"] == "system":
-                            system_msg = m["content"]
-                    seeds.append(SeedSample(instruction=user_msg, output=assistant_msg, system=system_msg))
+                if "messages" in item and isinstance(item["messages"], list):
+                    seed = SeedSample(messages=item["messages"])
+                    sys_msg = next((m["content"] for m in item["messages"] if m.get("role") == "system"), "")
+                    seed.system = sys_msg
+                    seeds.append(seed)
                 elif "instruction" in item and "output" in item:
                     seeds.append(SeedSample(
                         instruction=item["instruction"],

@@ -35,3 +35,15 @@ class TestPromptBuilder:
         msgs = builder.build()
         assert len(msgs) == 3
         assert msgs[2]["role"] == "assistant"
+
+    def test_multi_turn_template_render(self):
+        builder = PromptBuilder()
+        builder.from_template("topic_driven_system_mt.j2")
+        builder.from_template("topic_driven_user_mt.j2", topic="Python")
+        msgs = builder.build()
+        assert len(msgs) >= 2
+        system = msgs[0]["content"]
+        user = msgs[1]["content"]
+        assert "messages" in system.lower()
+        assert "Python" in user
+        assert "messages" in user

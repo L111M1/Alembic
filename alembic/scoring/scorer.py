@@ -65,7 +65,8 @@ class DatasetScorer:
                     sample = {v: sample.get(k, "") for k, v in field_map.items()}
                 inst = sample.get("instruction", "")
                 out = sample.get("output", "") or sample.get("response", "")
-                if inst and out:
+                msgs = sample.get("messages")
+                if (inst and out) or (msgs and isinstance(msgs, list) and len(msgs) >= 2):
                     samples.append(sample)
         return samples
 
@@ -111,8 +112,12 @@ class DatasetScorer:
             return None
 
     def _score_one(self, api: BaseAPIClient, sample: dict, index: int) -> Optional[dict]:
-        inst = sample.get("instruction", "")
-        out = sample.get("output", "") or sample.get("response", "")
+        if "messages" in sample and isinstance(sample["messages"], list):
+            inst = "\n".join(f"[{m['role']}]: {m['content']}" for m in sample["messages"])
+            out = inst
+        else:
+            inst = sample.get("instruction", "")
+            out = sample.get("output", "") or sample.get("response", "")
 
         dimensions = self._config.dimensions
         dim_desc = "\n".join(

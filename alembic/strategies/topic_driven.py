@@ -14,6 +14,7 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._topics_raw = params.get("topics", [])
         self._samples_per_topic = int(params.get("samples_per_topic", 1))
         self._total_count = int(params.get("total_count", 0))
+        self._multi_turn = bool(params.get("multi_turn", False))
         self._plan: list[dict[str, Any]] = self._build_plan()
 
     def _build_plan(self) -> list[dict[str, Any]]:
@@ -63,13 +64,14 @@ class TopicDrivenStrategy(GenerationStrategy):
         return plan
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
+        suffix = "_mt" if self._multi_turn else ""
         for entry in self._plan:
             topic = entry["topic"]
             knowledge = entry.get("knowledge", "")
             for i in range(entry["count"]):
                 builder = PromptBuilder(lang=self._lang)
-                builder.from_template("topic_driven_system.j2")
-                builder.from_template("topic_driven_user.j2", topic=topic, knowledge=knowledge)
+                builder.from_template(f"topic_driven_system{suffix}.j2")
+                builder.from_template(f"topic_driven_user{suffix}.j2", topic=topic, knowledge=knowledge)
                 messages = builder.build()
                 prompt_id = f"topic:{topic}:{i}"
                 yield (prompt_id, messages)
