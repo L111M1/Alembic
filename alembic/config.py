@@ -58,6 +58,7 @@ class CleanerConfig:
     embedding_batch_size: int = 20
     embedding_api_key: Optional[str] = None
     embedding_base_url: Optional[str] = None
+    input_format: str = "alpaca"  # "alpaca" or "chatml"
     field_map: Optional[dict] = None  # e.g. {"instruction": "question", "output": "answer"}
 
 
@@ -151,6 +152,7 @@ class AppConfig:
             embedding_batch_size=int(cleaner_data.get("embedding_batch_size", 20)),
             embedding_api_key=cleaner_data.get("embedding_api_key"),
             embedding_base_url=cleaner_data.get("embedding_base_url"),
+            input_format=cleaner_data.get("input_format", "alpaca"),
             field_map=cleaner_data.get("field_map"),
         )
 

@@ -47,90 +47,127 @@ class DatasetCleaner:
         logger.info(f"Cleaning done: kept={self._cleaned_count}, dropped={self._dropped_count}")
         return self._cleaned_count, self._dropped_count
 
-    def _clean_sample(self, sample: dict) -> Optional[dict]:
+    def _normalize(self, sample: dict) -> Optional[dict]:
         cfg = self._config
 
-        if "messages" in sample and isinstance(sample["messages"], list):
-            return self._clean_multi_turn(sample)
+        if cfg.field_map:
+            sample = {v: sample.get(k, "") for k, v in cfg.field_map.items()}
 
-        inst = sample.get("instruction", "")
-        out = sample.get("output", "") or sample.get("response", "")
+        fmt = cfg.input_format
+        if fmt == "alpaca" and "messages" in sample and isinstance(sample["messages"], list):
+            fmt = "chatml"
 
-        inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
-        out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
+        if fmt == "chatml":
+            messages = sample.get("messages", [])
+            system_text = ""
+            user_parts = []
+            assistant_parts = []
+            for m in messages:
+                role = m.get("role", "")
+                content = m.get("content", "") or ""
+                if role == "system":
+                    system_text = content
+                elif role == "user":
+                    if content:
+                        user_parts.append(content)
+                elif role == "assistant":
+                    if content:
+                        assistant_parts.append(content)
+                    for tc in m.get("tool_calls", []):
+                        fn = tc.get("function", {})
+                        assistant_parts.append(fn.get("name", ""))
+                        assistant_parts.append(fn.get("arguments", ""))
+            if not user_parts and not assistant_parts:
+                return None
+            return {
+                "instruction": "\n".join(user_parts),
+                "output": "\n".join(assistant_parts),
+                "system": system_text,
+                "metadata": sample.get("metadata"),
+                "_raw": sample,
+            }
+        else:
+            instruction = sample.get("instruction", "")
+            output = sample.get("output", "") or sample.get("response", "")
+            return {
+                "instruction": instruction,
+                "output": output,
+                "system": sample.get("system", ""),
+                "metadata": sample.get("metadata"),
+                "_raw": sample,
+            }
 
-        inst = inst.strip()
-        out = out.strip()
+    def _apply_quality(self, inst: str, out: str):
+        cfg = self._config
+
+        inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails).strip()
+        out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails).strip()
 
         ilen = len(inst)
         olen = len(out)
         if ilen < cfg.instruction_min_len or ilen > cfg.instruction_max_len:
-            return None
+            return False, inst, out
         if olen < cfg.output_min_len or olen > cfg.output_max_len:
-            return None
+            return False, inst, out
 
         if special_char_ratio(inst) > cfg.max_special_char_ratio:
-            return None
+            return False, inst, out
         if special_char_ratio(out) > cfg.max_special_char_ratio:
-            return None
+            return False, inst, out
 
         if word_repetition_ratio(out) > cfg.max_word_repetition_ratio:
-            return None
+            return False, inst, out
 
         if char_repetition_ratio(out) > cfg.max_char_repetition_ratio:
+            return False, inst, out
+
+        return True, inst, out
+
+    def _format_output(self, normalized: dict, inst: str, out: str) -> dict:
+        cfg = self._config
+        raw = normalized["_raw"]
+
+        if "messages" in raw and isinstance(raw["messages"], list):
+            messages = raw["messages"]
+            cleaned_msgs = []
+            for m in messages:
+                msg = dict(m)
+                content = msg.get("content")
+                if content is not None and isinstance(content, str):
+                    msg["content"] = clean_text(
+                        content, cfg.remove_html, cfg.remove_urls, cfg.remove_emails
+                    ).strip()
+                cleaned_msgs.append(msg)
+            result = {"messages": cleaned_msgs}
+            if raw.get("system"):
+                result["system"] = raw["system"]
+            if raw.get("metadata"):
+                result["metadata"] = raw["metadata"]
+            return result
+        else:
+            result = {"instruction": inst, "output": out}
+            if normalized.get("system"):
+                result["system"] = normalized["system"]
+            if normalized.get("metadata"):
+                result["metadata"] = normalized["metadata"]
+            return result
+
+    def _clean_sample(self, sample: dict) -> Optional[dict]:
+        normalized = self._normalize(sample)
+        if normalized is None:
             return None
 
-        if cfg.dedup:
+        passed, inst, out = self._apply_quality(normalized["instruction"], normalized["output"])
+        if not passed:
+            return None
+
+        if self._config.dedup:
             key = compute_dedup_key(inst + out)
             if key in self._seen_keys:
                 return None
             self._seen_keys.add(key)
 
-        result = {"instruction": inst, "output": out}
-        if sample.get("system"):
-            result["system"] = sample["system"]
-        if sample.get("metadata"):
-            result["metadata"] = sample["metadata"]
-        return result
-
-    def _clean_multi_turn(self, sample: dict) -> Optional[dict]:
-        cfg = self._config
-        messages = sample["messages"]
-        cleaned_messages = []
-        for m in messages:
-            content = clean_text(m.get("content", ""), cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
-            cleaned_messages.append({"role": m.get("role", ""), "content": content.strip()})
-
-        all_text = " ".join(m["content"] for m in cleaned_messages)
-        ilen = sum(len(m["content"]) for m in cleaned_messages if m.get("role") == "user")
-        olen = sum(len(m["content"]) for m in cleaned_messages if m.get("role") == "assistant")
-        if ilen < cfg.instruction_min_len or ilen > cfg.instruction_max_len:
-            return None
-        if olen < cfg.output_min_len or olen > cfg.output_max_len:
-            return None
-
-        for m in cleaned_messages:
-            if special_char_ratio(m["content"]) > cfg.max_special_char_ratio:
-                return None
-
-        out_text = " ".join(m["content"] for m in cleaned_messages if m.get("role") == "assistant")
-        if word_repetition_ratio(out_text) > cfg.max_word_repetition_ratio:
-            return None
-        if char_repetition_ratio(out_text) > cfg.max_char_repetition_ratio:
-            return None
-
-        if cfg.dedup:
-            key = compute_dedup_key(all_text)
-            if key in self._seen_keys:
-                return None
-            self._seen_keys.add(key)
-
-        result = {"messages": cleaned_messages}
-        if sample.get("system"):
-            result["system"] = sample["system"]
-        if sample.get("metadata"):
-            result["metadata"] = sample["metadata"]
-        return result
+        return self._format_output(normalized, inst, out)
 
     def _clean_with_embeddings(self, input_path: str, output_path: str) -> tuple[int, int]:
         candidates = self._load_candidates(input_path)
@@ -142,7 +179,12 @@ class DatasetCleaner:
 
         with open(output_path, "w", encoding="utf-8") as fout:
             for sample in kept:
-                fout.write(json.dumps(sample, ensure_ascii=False) + "\n")
+                raw = sample.pop("_raw", None)
+                if raw and "messages" in raw and isinstance(raw["messages"], list):
+                    record = self._format_output({"_raw": raw}, sample["instruction"], sample["output"])
+                else:
+                    record = sample
+                fout.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         self._cleaned_count = len(kept)
         self._dropped_count += len(candidates) - len(kept)
@@ -169,41 +211,20 @@ class DatasetCleaner:
         return candidates
 
     def _basic_clean(self, sample: dict) -> Optional[dict]:
-        cfg = self._config
-        if cfg.field_map:
-            sample = {v: sample.get(k, "") for k, v in cfg.field_map.items()}
+        normalized = self._normalize(sample)
+        if normalized is None:
+            return None
 
-        if "messages" in sample and isinstance(sample["messages"], list):
-            return self._clean_multi_turn(sample)
-
-        inst = sample.get("instruction", "")
-        out = sample.get("output", "") or sample.get("response", "")
-
-        inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
-        out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails)
-        inst = inst.strip()
-        out = out.strip()
-
-        ilen = len(inst)
-        olen = len(out)
-        if ilen < cfg.instruction_min_len or ilen > cfg.instruction_max_len:
-            return None
-        if olen < cfg.output_min_len or olen > cfg.output_max_len:
-            return None
-        if special_char_ratio(inst) > cfg.max_special_char_ratio:
-            return None
-        if special_char_ratio(out) > cfg.max_special_char_ratio:
-            return None
-        if word_repetition_ratio(out) > cfg.max_word_repetition_ratio:
-            return None
-        if char_repetition_ratio(out) > cfg.max_char_repetition_ratio:
+        passed, inst, out = self._apply_quality(normalized["instruction"], normalized["output"])
+        if not passed:
             return None
 
         result = {"instruction": inst, "output": out}
-        if sample.get("system"):
-            result["system"] = sample["system"]
-        if sample.get("metadata"):
-            result["metadata"] = sample["metadata"]
+        if normalized.get("system"):
+            result["system"] = normalized["system"]
+        if normalized.get("metadata"):
+            result["metadata"] = normalized["metadata"]
+        result["_raw"] = normalized.get("_raw")
         return result
 
     def _semantic_dedup(self, candidates: list[dict]) -> list[dict]:
