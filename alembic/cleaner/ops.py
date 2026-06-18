@@ -1,5 +1,5 @@
-import re
 import hashlib
+import re
 
 _URL_PATTERN = re.compile(
     r'https?://[^\s<>"\'{}|\\^`\[\]]+|www\.[^\s<>"\'{}|\\^`\[\]]+',

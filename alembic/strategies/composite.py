@@ -5,9 +5,9 @@ from typing import Iterator, Optional
 from alembic.api.base import BaseAPIClient
 from alembic.core.types import GenerationSample
 from alembic.strategies.base import GenerationStrategy
-from alembic.strategies.topic_driven import TopicDrivenStrategy
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.self_instruct import SelfInstructStrategy
+from alembic.strategies.topic_driven import TopicDrivenStrategy
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,6 @@ import logging
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 from alembic.core.observer import Observer
 

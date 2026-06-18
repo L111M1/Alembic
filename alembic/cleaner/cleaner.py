@@ -228,8 +228,9 @@ class DatasetCleaner:
         return result
 
     def _semantic_dedup(self, candidates: list[dict]) -> list[dict]:
-        import numpy as np
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        import numpy as np
 
         client = EmbeddingClient(
             model=self._config.embedding_model,

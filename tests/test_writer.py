@@ -1,5 +1,4 @@
 import json
-import os
 
 from alembic.config import OutputConfig
 from alembic.core.types import GenerationSample

@@ -1,6 +1,6 @@
-from alembic.quality.validators import build_validator_chain
 from alembic.config import QualityConfig
 from alembic.core.types import GenerationSample
+from alembic.quality.validators import build_validator_chain
 
 
 class TestQuality:

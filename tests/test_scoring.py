@@ -5,7 +5,6 @@ from alembic.api.base import BaseAPIClient
 from alembic.config import ScoringConfig
 from alembic.scoring import DatasetScorer
 
-
 _DEFAULT_DIMS = [
     {"name": "correctness", "label": "Correctness", "description": "Is the answer accurate and factually correct", "max_score": 10},
     {"name": "helpfulness", "label": "Helpfulness", "description": "Is the answer practically helpful", "max_score": 10},

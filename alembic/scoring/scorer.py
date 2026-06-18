@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Optional
 
 from alembic.api.base import BaseAPIClient
-from alembic.prompts.builder import PromptBuilder
 from alembic.config import ScoringConfig
+from alembic.prompts.builder import PromptBuilder
 
 logger = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 import json
 import os
+from collections import Counter
 
 from alembic.core.stats import StatisticsCollector
 from alembic.core.types import GenerationStats
-from collections import Counter
 
 
 class TestStatisticsCollector:

@@ -1,8 +1,7 @@
-from alembic.strategies.topic_driven import TopicDrivenStrategy
+from alembic.prompts.builder import load_seeds
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.self_instruct import SelfInstructStrategy
-from alembic.prompts.builder import load_seeds
-from alembic.core.types import GenerationSample
+from alembic.strategies.topic_driven import TopicDrivenStrategy
 
 
 class TestTopicDriven:

@@ -1,9 +1,8 @@
 import abc
 import json
-import time
 import logging
+import time
 from dataclasses import dataclass
-
 
 logger = logging.getLogger(__name__)
 

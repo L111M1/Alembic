@@ -1,12 +1,14 @@
-import click
 import logging
 from pathlib import Path
 
-from alembic.core.pipeline import Pipeline
-from alembic.cleaner import DatasetCleaner
-from alembic.scoring import DatasetScorer
-from alembic.config import CleanerConfig, AppConfig, ScoringConfig
+import click
+
 from alembic.api.factory import create_client
+from alembic.cleaner import DatasetCleaner
+from alembic.config import AppConfig, CleanerConfig, ScoringConfig
+from alembic.core.inspector import DatasetInspector
+from alembic.core.pipeline import Pipeline
+from alembic.scoring import DatasetScorer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -110,6 +112,25 @@ def score(input_file: str, output: str, config: str, concurrency: int):
     print(f"  Scored:  {scored}")
     print(f"  Failed:  {failed}")
     print(f"  Output:  {output}")
+
+
+@main.command()
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option("--samples", "-n", type=int, default=3, help="Number of sample rows to display")
+@click.option("--json", "-j", "as_json", is_flag=True, help="Output report as JSON")
+def view(input_file: str, samples: int, as_json: bool):
+    """View a JSONL dataset: statistics, distribution, and sample rows"""
+    inspector = DatasetInspector()
+    if as_json:
+        import json as json_mod
+        report = inspector.inspect_file(input_file)
+        print(json_mod.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        out = inspector.print_report(input_file)
+        print(out)
+        if samples > 0:
+            out2 = inspector.print_samples(input_file, n=samples)
+            print(out2)
 
 
 @main.command()

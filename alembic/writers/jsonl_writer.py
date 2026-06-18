@@ -4,8 +4,8 @@ import logging
 import os
 from pathlib import Path
 
-from alembic.core.types import GenerationSample
 from alembic.config import OutputConfig
+from alembic.core.types import GenerationSample
 
 logger = logging.getLogger(__name__)
 

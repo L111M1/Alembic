@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import abc
 import hashlib
 import logging
 from typing import Optional
 
-from alembic.core.types import GenerationSample
 from alembic.config import QualityConfig
+from alembic.core.types import GenerationSample
 
 logger = logging.getLogger(__name__)
 
