@@ -1,4 +1,10 @@
+{% set question_types = ["concept explanation", "comparison", "application problem", "true/false", "short answer", "scenario simulation", "case analysis", "derivation/proof"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
 user: Come up with and generate one brand new multi-turn SFT training sample. Ensure it differs from existing data below:
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
 {{ existing_instructions }}
 
 Generate one new multi-turn conversation (2-4 exchanges). Output pure JSON only, no extra text:

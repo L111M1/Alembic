@@ -1,4 +1,10 @@
+{% set question_types = ["concept explanation", "comparison", "application problem", "true/false", "short answer", "scenario simulation", "case analysis", "derivation/proof"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
 user: Below are some example training samples. Reference their style and format, and generate one brand new, different multi-turn SFT training sample.
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
 
 {{ examples }}
 

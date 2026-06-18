@@ -1,4 +1,10 @@
+{% set question_types = ["概念解释", "对比分析", "应用题", "正误判断", "简答题", "场景模拟", "案例分析", "推导与证明"] %}
+{% set difficulties = ["入门", "进阶", "高级"] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
 user: 以下是几条示例训练数据，请参考它们的风格和格式，生成一条全新的、内容不同的 SFT 训练数据。
+难度：{{ difficulty }}
+提问类型：{{ question_type }}
 
 {{ examples }}
 
