@@ -114,6 +114,25 @@ class GenerationStrategy(abc.ABC):
             text = "\n".join(lines).strip()
         data = json.loads(text)
 
+        if isinstance(data, list):
+            results = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                if "messages" in item:
+                    sample = GenerationSample(messages=item["messages"])
+                    if metadata:
+                        sample.metadata = dict(metadata)
+                    results.append(sample)
+                else:
+                    instruction = item.get("instruction", "").strip()
+                    output = item.get("output", "").strip()
+                    sample = GenerationSample(instruction=instruction, output=output)
+                    if metadata:
+                        sample.metadata = dict(metadata)
+                    results.append(sample)
+            return results
+
         if "messages" in data:
             messages = data["messages"]
             sample = GenerationSample(messages=messages)

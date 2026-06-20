@@ -34,6 +34,41 @@ class FakeMultiTurnAPI(BaseAPIClient):
         })
 
 
+class FakeBatchAPI(BaseAPIClient):
+    def supports_json_mode(self):
+        return True
+
+    def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        import re
+        user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
+        match = re.search(r"Generate (\d+) diverse", user_msg)
+        count = int(match.group(1)) if match else 1
+        return json.dumps([
+            {"instruction": f"Q{i}: test question", "output": f"A{i}: test answer"}
+            for i in range(count)
+        ])
+
+
+class FakeBatchMultiTurnAPI(BaseAPIClient):
+    def supports_json_mode(self):
+        return True
+
+    def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        import re
+        user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
+        match = re.search(r"Generate (\d+) diverse", user_msg)
+        count = int(match.group(1)) if match else 1
+        return json.dumps([
+            {"messages": [
+                {"role": "user", "content": f"Q{i}a"},
+                {"role": "assistant", "content": f"A{i}a"},
+                {"role": "user", "content": f"Q{i}b"},
+                {"role": "assistant", "content": f"A{i}b"},
+            ]}
+            for i in range(count)
+        ])
+
+
 class FakeScoreAPI(BaseAPIClient):
     def supports_json_mode(self):
         return True
@@ -55,6 +90,16 @@ def fake_api():
 @pytest.fixture
 def fake_multi_turn_api():
     return FakeMultiTurnAPI()
+
+
+@pytest.fixture
+def fake_batch_api():
+    return FakeBatchAPI()
+
+
+@pytest.fixture
+def fake_batch_multi_turn_api():
+    return FakeBatchMultiTurnAPI()
 
 
 @pytest.fixture

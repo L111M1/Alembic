@@ -1,4 +1,5 @@
 from alembic.prompts.builder import load_seeds
+from alembic.strategies.base import GenerationStrategy
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.self_instruct import SelfInstructStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy
@@ -28,6 +29,82 @@ class TestTopicDriven:
         _pid, messages = prompts[0]
         assert len(messages) >= 1
         assert "multi-turn" in messages[0]["content"].lower()
+
+    def test_batch_one_prompt_per_topic(self, fake_batch_api):
+        strategy = TopicDrivenStrategy(fake_batch_api, {
+            "topics": ["Math", "Physics"],
+            "samples_per_topic": 5,
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 2
+        for _pid, messages in prompts:
+            user = messages[-1]["content"]
+            assert "Generate 5 diverse" in user
+
+    def test_batch_generates_correct_sample_count(self, fake_batch_api):
+        strategy = TopicDrivenStrategy(fake_batch_api, {
+            "topics": ["Math", "Physics"],
+            "samples_per_topic": 5,
+        })
+        samples = list(strategy.generate())
+        assert len(samples) == 10
+
+    def test_batch_splits_when_exceeds_max_per_request(self, fake_batch_api):
+        strategy = TopicDrivenStrategy(fake_batch_api, {
+            "topics": ["CS"],
+            "samples_per_topic": 25,
+            "max_samples_per_request": 10,
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 3
+        counts = []
+        for pid, messages in prompts:
+            user = messages[-1]["content"]
+            import re
+            m = re.search(r"Generate (\d+) diverse", user)
+            if m:
+                counts.append(int(m.group(1)))
+        assert counts == [10, 10, 5]
+
+    def test_batch_single_sample_per_topic(self, fake_batch_api):
+        strategy = TopicDrivenStrategy(fake_batch_api, {
+            "topics": ["Art"],
+            "samples_per_topic": 1,
+        })
+        samples = list(strategy.generate())
+        assert len(samples) == 1
+
+    def test_batch_parse_array(self, fake_batch_api):
+        import json
+        strategy = TopicDrivenStrategy(fake_batch_api, {"topics": ["X"], "samples_per_topic": 1})
+        result = strategy._parse(json.dumps([
+            {"instruction": "q1", "output": "a1"},
+            {"instruction": "q2", "output": "a2"},
+        ]))
+        assert len(result) == 2
+        assert result[0].instruction == "q1"
+        assert result[1].instruction == "q2"
+
+    def test_batch_parse_multi_turn_array(self, fake_batch_api):
+        import json
+        strategy = TopicDrivenStrategy(fake_batch_api, {"topics": ["X"], "samples_per_topic": 1})
+        result = strategy._parse(json.dumps([
+            {"messages": [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"}]},
+            {"messages": [{"role": "user", "content": "q2"}, {"role": "assistant", "content": "a2"}]},
+        ]))
+        assert len(result) == 2
+        assert result[0].is_multi_turn
+        assert result[1].is_multi_turn
+
+    def test_batch_multi_turn_generates_correct_count(self, fake_batch_multi_turn_api):
+        strategy = TopicDrivenStrategy(fake_batch_multi_turn_api, {
+            "topics": ["Python"], "samples_per_topic": 3, "multi_turn": True,
+        })
+        samples = list(strategy.generate())
+        assert len(samples) == 3
+        for s in samples:
+            assert s.is_multi_turn
+            assert len(s.messages) == 4
 
 
 class TestSeedDriven:

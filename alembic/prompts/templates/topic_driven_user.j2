@@ -1,17 +1,24 @@
-{% set question_types = ["concept explanation", "comparison", "application problem", "true/false", "short answer", "scenario simulation", "case analysis", "derivation/proof"] %}
-{% set difficulties = ["beginner", "intermediate", "advanced"] %}
 {% set sub_topics = knowledge | replace("，", ",") | split(",") if knowledge else [] %}
-{% set question_type = random.choice(question_types) %}
-{% set difficulty = random.choice(difficulties) %}
-{% set sub_topic = random.choice(sub_topics) if sub_topics else "" %}
-user: Generate one SFT training sample for the topic "{{ topic }}".
-Difficulty: {{ difficulty }}
-Question type: {{ question_type }}
-{% if sub_topic %}Sub-topic: {{ sub_topic }}{% endif %}
-{% if knowledge %} Use the following background knowledge to ensure accuracy:
+{% if sub_topics and count <= sub_topics|length %}
+{% set assigned = sub_topics[:count]|map('trim')|list %}
+user: Generate {{ count }} SFT training samples for the topic "{{ topic }}", each targeting a different sub-topic. Strictly follow this assignment:
+{% for st in assigned %}
+  Sample {{ loop.index }} -> sub-topic: {{ st }}
+{%- endfor %}
+Requirements: each sample must use a different difficulty (beginner/intermediate/advanced) and a different question type (concept explanation, comparison, application problem, true/false, short answer, scenario simulation, case analysis, derivation/proof). No two samples should have similar question angles.
+{% else %}
+{% set sub_topic_list = sub_topics|map('trim')|join(', ') if sub_topics else '' %}
+user: Generate {{ count }} diverse SFT training samples for the topic "{{ topic }}".
+{% if sub_topics %}Every sub-topic below must be covered at least once — do not concentrate all samples on a few sub-topics: {{ sub_topic_list }}{% endif %}
+The {{ count }} samples must cover a variety of difficulties (beginner, intermediate, advanced) and question types (concept explanation, comparison, application problem, true/false, short answer, scenario simulation, case analysis, derivation/proof). No two samples should have similar question angles or structure.
+{% endif %}
+{% if knowledge %}Use the following background knowledge to ensure accuracy:
 {{ knowledge }}{% endif %}
-Output pure JSON only, no extra text:
-{
-  "instruction": "user instruction",
-  "output": "assistant answer"
-}
+Output a pure JSON array only, no extra text:
+[
+  {
+    "instruction": "user instruction",
+    "output": "assistant answer"
+  },
+  ...
+]

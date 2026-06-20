@@ -15,6 +15,7 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._samples_per_topic = int(params.get("samples_per_topic", 1))
         self._total_count = int(params.get("total_count", 0))
         self._multi_turn = bool(params.get("multi_turn", False))
+        self._max_samples_per_request = int(params.get("max_samples_per_request", 10))
         self._plan: list[dict[str, Any]] = self._build_plan()
 
     def _build_plan(self) -> list[dict[str, Any]]:
@@ -65,16 +66,23 @@ class TopicDrivenStrategy(GenerationStrategy):
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         suffix = "_mt" if self._multi_turn else ""
+        max_batch = self._max_samples_per_request
         for entry in self._plan:
             topic = entry["topic"]
             knowledge = entry.get("knowledge", "")
-            for i in range(entry["count"]):
+            total = entry["count"]
+            remaining = total
+            batch_idx = 0
+            while remaining > 0:
+                batch_count = min(remaining, max_batch)
+                remaining -= batch_count
                 builder = PromptBuilder(lang=self._lang)
                 builder.from_template(f"topic_driven_system{suffix}.j2")
-                builder.from_template(f"topic_driven_user{suffix}.j2", topic=topic, knowledge=knowledge)
+                builder.from_template(f"topic_driven_user{suffix}.j2", topic=topic, knowledge=knowledge, count=batch_count)
                 messages = builder.build()
-                prompt_id = f"topic:{topic}:{i}"
+                prompt_id = f"topic:{topic}:batch{batch_idx}" if total > max_batch else f"topic:{topic}"
                 yield (prompt_id, messages)
+                batch_idx += 1
 
     def _build_metadata(self, prompt_id: str) -> dict:
         parts = prompt_id.split(":")

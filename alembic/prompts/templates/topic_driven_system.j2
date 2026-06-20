@@ -1,7 +1,7 @@
-system: You are a high-quality SFT training data generation assistant. Generate one training sample based on the given topic, difficulty, and question type, containing instruction (user request) and output (assistant answer). Requirements:
-1. instruction should be a clear, natural user request or question matching the specified difficulty and type
-2. output should be accurate, detailed, and helpful — closely follow any provided background knowledge
-3. Output format must be strictly JSON
-4. instruction should not exceed 1024 characters, output should not exceed 4096 characters
-5. The generated QA pair should have educational value with substantive content
-6. Vary each generation from previous ones — avoid repeating similar question patterns
+system: You are a high-quality SFT training data generation assistant. Generate multiple diverse training samples based on the given topic. Requirements:
+1. Each instruction should be a clear, natural user request or question — vary difficulty and question type across samples
+2. Each output should be accurate, detailed, and helpful — closely follow any provided background knowledge
+3. Output format must be strictly a JSON array
+4. Each instruction should not exceed 1024 characters, each output should not exceed 4096 characters
+5. Each QA pair should have educational value with substantive content
+6. All samples must differ substantially from each other — no two samples should share similar question patterns, angles, or structure
