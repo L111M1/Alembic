@@ -44,7 +44,7 @@ class StatisticsCollector(Observer):
         self._end_time = time.time()
         self._generated = stats.total_generated
         self._filtered = stats.total_filtered
-        self._by_strategy = stats.by_strategy or Counter()
+        self._by_strategy = Counter(stats.by_strategy or {})
         self._errors = stats.errors or []
 
     def record_sample(self, sample: dict) -> None:
@@ -102,8 +102,8 @@ class StatisticsCollector(Observer):
                 "elapsed_seconds": round(elapsed, 1),
                 "generation_rate": round(self._generated / max(elapsed, 0.001), 2),
             },
-            "by_strategy": dict(self._by_strategy.most_common()),
-            "by_topic": dict(self._by_topic.most_common()) if self._by_topic else None,
+            "by_strategy": dict(Counter(self._by_strategy).most_common()),
+            "by_topic": dict(Counter(self._by_topic).most_common()) if self._by_topic else None,
             "length_distribution": self._compute_length_stats(),
             "cleaner": {
                 "kept": self._cleaner_kept,
