@@ -218,7 +218,7 @@ class TopicDrivenStrategy(GenerationStrategy):
             existing_angles=angle_hint,
         )
         messages = builder.build()
-        raw = self._call_api(messages)
+        raw = self._call_api(messages, use_json_mode=False)
         items = self._parse_plan_items(raw, topic)
         logger.info(
             f"Planning topic '{topic}': requested {count}, got {len(items)} items"

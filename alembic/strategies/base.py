@@ -19,6 +19,7 @@ class GenerationStrategy(abc.ABC):
         self._name = self.__class__.__name__
         self._lang = params.get("lang", "en")
         self._concurrency = max(1, int(params.get("concurrency", 1)))
+        self._json_mode = bool(params.get("json_mode", True))
 
     @abc.abstractmethod
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
@@ -101,10 +102,15 @@ class GenerationStrategy(abc.ABC):
     def estimated_count(self) -> int:
         return len(self._params.get("topics", [])) * self._params.get("samples_per_topic", 1)
 
-    def _call_api(self, messages: list[dict]) -> str:
+    def _call_api(self, messages: list[dict], use_json_mode: bool = None) -> str:
         temperature = self._params.get("temperature", 0.8)
         max_tokens = self._params.get("max_tokens", 2048)
-        return self._api.call(messages, temperature=temperature, max_tokens=max_tokens)
+        kwargs = {}
+        if use_json_mode is None:
+            use_json_mode = self._json_mode
+        if use_json_mode and self._api.supports_json_mode():
+            kwargs["response_format"] = {"type": "json_object"}
+        return self._api.call(messages, temperature=temperature, max_tokens=max_tokens, **kwargs)
 
     def _parse(self, response_text: str, metadata: dict = None) -> list[GenerationSample]:
         text = response_text.strip()
