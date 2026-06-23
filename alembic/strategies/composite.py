@@ -1,5 +1,7 @@
 import logging
 import random
+from queue import Queue
+from threading import Thread
 from typing import Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
@@ -33,12 +35,64 @@ class CompositeStrategy(GenerationStrategy):
             raise ValueError("No valid strategies configured")
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
-        for strategy, _ in self._strategies:
-            yield from strategy.iter_prompts()
+        if len(self._strategies) <= 1:
+            for strategy, _ in self._strategies:
+                yield from strategy.iter_prompts()
+            return
+
+        q: Queue = Queue()
+
+        def produce(s: GenerationStrategy):
+            try:
+                for prompt_id, messages in s.iter_prompts():
+                    q.put((prompt_id, messages))
+            finally:
+                q.put(None)
+
+        threads = [Thread(target=produce, args=(s,), daemon=True) for s, _ in self._strategies]
+        for t in threads:
+            t.start()
+
+        done = 0
+        while done < len(threads):
+            item = q.get()
+            if item is None:
+                done += 1
+            else:
+                yield item
+
+        for t in threads:
+            t.join()
 
     def generate(self) -> Iterator[GenerationSample]:
-        for strategy, _ in self._strategies:
-            yield from strategy.generate()
+        if len(self._strategies) <= 1:
+            for strategy, _ in self._strategies:
+                yield from strategy.generate()
+            return
+
+        q: Queue = Queue()
+
+        def produce(s: GenerationStrategy):
+            try:
+                for sample in s.generate():
+                    q.put(sample)
+            finally:
+                q.put(None)
+
+        threads = [Thread(target=produce, args=(s,), daemon=True) for s, _ in self._strategies]
+        for t in threads:
+            t.start()
+
+        done = 0
+        while done < len(threads):
+            item = q.get()
+            if item is None:
+                done += 1
+            else:
+                yield item
+
+        for t in threads:
+            t.join()
 
     def estimated_count(self) -> int:
         return sum(s.estimated_count() for s, _ in self._strategies)

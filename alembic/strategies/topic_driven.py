@@ -1,5 +1,6 @@
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
@@ -165,6 +166,57 @@ class TopicDrivenStrategy(GenerationStrategy):
     # ── stage 1: planning ──────────────────────────────────────────────
 
     def _run_planning(self) -> list[dict[str, Any]]:
+        if not self._plan:
+            return []
+
+        max_workers = min(self._concurrency, len(self._plan))
+
+        if max_workers <= 1:
+            return self._run_planning_sequential()
+
+        logger.info(f"Planning {len(self._plan)} topics in parallel (workers={max_workers})")
+        all_items: list[dict[str, Any]] = []
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for entry in self._plan:
+                future = executor.submit(
+                    self._plan_single_topic,
+                    entry["topic"],
+                    entry["count"],
+                    entry.get("knowledge", ""),
+                )
+                futures[future] = entry["topic"]
+
+            for future in as_completed(futures):
+                topic = futures[future]
+                try:
+                    topic_items = future.result()
+                    all_items.extend(topic_items)
+                except Exception as e:
+                    logger.error(f"Planning failed for topic '{topic}': {e}")
+
+        deduped: list[dict[str, Any]] = []
+        seen_angles: set[str] = set()
+        for item in all_items:
+            angle_key = self._normalize_angle(item.get("angle", ""))
+            if angle_key and angle_key not in seen_angles:
+                seen_angles.add(angle_key)
+                deduped.append(item)
+            else:
+                logger.debug(
+                    f"Skipping duplicate angle (post-dedup): {item.get('angle', '')[:80]}"
+                )
+
+        logger.info(
+            f"Planning complete: {len(deduped)} unique items "
+            f"across {len(self._plan)} topics "
+            f"(filtered {len(all_items) - len(deduped)} cross-topic duplicates)"
+        )
+        self._log_plan_breakdown(deduped)
+        return deduped
+
+    def _run_planning_sequential(self) -> list[dict[str, Any]]:
         all_items: list[dict[str, Any]] = []
         seen_angles: set[str] = set()
 
@@ -196,7 +248,50 @@ class TopicDrivenStrategy(GenerationStrategy):
             f"across {len(self._plan)} topics "
             f"(filtered {sum(e['count'] for e in self._plan) - len(all_items)} duplicates)"
         )
+        self._log_plan_breakdown(all_items)
         return all_items
+
+    def _plan_single_topic(
+        self, topic: str, count: int, knowledge: str,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        seen_angles: set[str] = set()
+        remaining = count
+
+        while remaining > 0:
+            batch_size = min(remaining, self._max_samples_per_request)
+            topic_items = self._plan_topic(
+                topic, batch_size, knowledge, list(seen_angles),
+            )
+            for item in topic_items:
+                item["topic"] = topic
+                item["_topic_knowledge"] = knowledge
+                angle_key = self._normalize_angle(item.get("angle", ""))
+                if angle_key and angle_key not in seen_angles:
+                    seen_angles.add(angle_key)
+                    items.append(item)
+                else:
+                    logger.debug(
+                        f"Skipping duplicate angle: {item.get('angle', '')[:80]}"
+                    )
+            remaining -= batch_size
+
+        return items
+
+    def _log_plan_breakdown(self, items: list[dict[str, Any]]) -> None:
+        by_topic: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            t = item.get("topic", "(unknown)")
+            by_topic.setdefault(t, []).append(item)
+
+        for topic, topic_items in sorted(by_topic.items()):
+            sub_topic_counts: dict[str, int] = {}
+            for item in topic_items:
+                st = item.get("sub_topic", "") or "(unnamed)"
+                sub_topic_counts[st] = sub_topic_counts.get(st, 0) + 1
+
+            parts = [f"{st}({cnt})" for st, cnt in sorted(sub_topic_counts.items(), key=lambda x: -x[1])]
+            logger.info(f"  [{topic}] {len(topic_items)} items: {', '.join(parts[:8])}{'...' if len(parts) > 8 else ''}")
 
     def _plan_topic(
         self, topic: str, count: int, knowledge: str, existing_angles: list[str],
