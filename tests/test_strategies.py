@@ -36,7 +36,7 @@ class TestTopicDriven:
             "samples_per_topic": 5,
         })
         prompts = list(strategy.iter_prompts())
-        assert len(prompts) == 6
+        assert len(prompts) == 2
         for _pid, messages in prompts:
             user = messages[-1]["content"]
             assert "Generate" in user
@@ -49,23 +49,25 @@ class TestTopicDriven:
         })
         samples = list(strategy.generate())
         assert len(samples) == 10
+        for s in samples:
+            assert "sub_topic" in s.metadata
+            assert "angle" in s.metadata
+            assert "difficulty" in s.metadata
+            assert "question_type" in s.metadata
 
-    def test_batch_splits_when_exceeds_max_per_request(self, fake_batch_api):
+    def test_batch_splits_when_exceeds_planning_max(self, fake_batch_api):
         strategy = TopicDrivenStrategy(fake_batch_api, {
             "topics": ["CS"],
             "samples_per_topic": 25,
             "max_samples_per_request": 10,
         })
         prompts = list(strategy.iter_prompts())
-        assert len(prompts) == 13
-        counts = []
-        for pid, messages in prompts:
+        assert len(prompts) == 1
+        for _pid, messages in prompts:
             user = messages[-1]["content"]
-            import re
-            m = re.search(r"Generate (\d+) diverse", user)
-            if m:
-                counts.append(int(m.group(1)))
-        assert sum(counts) == 25
+            assert "Generate" in user
+            assert "25" in user
+            assert "PLAN" in user
 
     def test_batch_single_sample_per_topic(self, fake_batch_api):
         strategy = TopicDrivenStrategy(fake_batch_api, {

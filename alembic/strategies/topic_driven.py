@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
+from alembic.core.types import GenerationSample
 from alembic.prompts.builder import PromptBuilder
 from alembic.strategies.base import GenerationStrategy
 
@@ -22,6 +23,7 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._two_stage = bool(params.get("two_stage", True))
         self._plan: list[dict[str, Any]] = self._build_plan()
         self._plan_items: Optional[list[dict[str, Any]]] = None  # cached stage-1 output
+        self._plan_lookup: dict[str, list[dict[str, Any]]] = {}  # prompt_id -> batch plan items
 
     def _build_plan(self) -> list[dict[str, Any]]:
         if not self._topics_raw:
@@ -117,7 +119,6 @@ class TopicDrivenStrategy(GenerationStrategy):
             return
 
         suffix = "_mt" if self._multi_turn else ""
-        max_batch = self._execution_max_per_request
 
         by_topic: dict[str, list[dict[str, Any]]] = {}
         for item in self._plan_items:
@@ -127,36 +128,45 @@ class TopicDrivenStrategy(GenerationStrategy):
         batch_idx = 0
         for topic, topic_items in by_topic.items():
             knowledge = topic_items[0].get("_topic_knowledge", "") if topic_items else ""
-            offset = 0
-            while offset < len(topic_items):
-                batch = topic_items[offset:offset + max_batch]
-                offset += len(batch)
+            batch = topic_items
 
-                plan_lines = self._format_plan_batch(batch)
+            plan_lines = self._format_plan_batch(batch)
+            sub_topic_list = ", ".join(
+                item.get("sub_topic", "") for item in batch if item.get("sub_topic")
+            )
 
-                builder = PromptBuilder(lang=self._lang)
-                builder.from_template(f"topic_driven_system{suffix}.j2")
-                builder.from_template(
-                    f"topic_driven_user{suffix}.j2",
-                    topic=topic,
-                    knowledge=knowledge,
-                    count=len(batch),
-                )
-                messages = builder.build()
+            builder = PromptBuilder(lang=self._lang)
+            builder.from_template(f"topic_driven_system{suffix}.j2")
+            builder.from_template(
+                f"topic_driven_user{suffix}.j2",
+                topic=topic,
+                knowledge=knowledge,
+                count=len(batch),
+            )
+            messages = builder.build()
 
-                plan_header = f"\n\n--- PLAN (follow these exact specifications) ---\n{plan_lines}\n--- END PLAN ---"
-                if messages and messages[-1]["role"] == "user":
-                    messages[-1]["content"] += plan_header
+            plan_header = (
+                f"\n\n--- PLAN ---\n"
+                f"Sub-topics: {sub_topic_list}\n\n"
+                f"MUST generate exactly {len(batch)} samples following these specifications "
+                f"(one per item, same order):\n"
+                f"{plan_lines}\n\n"
+                f"CRITICAL: Every sample must differ substantially in instruction, output, and structure. No two samples may resemble each other."
+                f"\n--- END PLAN ---"
+            )
+            if messages and messages[-1]["role"] == "user":
+                messages[-1]["content"] += plan_header
 
-                prompt_id = f"topic:{topic}:stage2_batch{batch_idx}"
-                yield (prompt_id, messages)
-                batch_idx += 1
+            prompt_id = f"topic:{topic}"
+            self._plan_lookup[prompt_id] = batch
+            yield (prompt_id, messages)
+            batch_idx += 1
 
     def _format_plan_batch(self, batch: list[dict[str, Any]]) -> str:
         lines = []
         for i, item in enumerate(batch):
             lines.append(
-                f"Sample {i + 1}: sub_topic={item.get('sub_topic', '')} | "
+                f"  {i + 1}. sub_topic={item.get('sub_topic', '')} | "
                 f"angle={item.get('angle', '')} | "
                 f"difficulty={item.get('difficulty', 'intermediate')} | "
                 f"question_type={item.get('question_type', 'concept_explanation')}"
@@ -362,10 +372,41 @@ class TopicDrivenStrategy(GenerationStrategy):
 
     def _build_metadata(self, prompt_id: str) -> dict:
         parts = prompt_id.split(":")
-        return {
+        meta = {
             "strategy": "topic_driven",
             "topic": parts[1] if len(parts) >= 2 else "",
         }
+        batch = self._plan_lookup.get(prompt_id)
+        if batch:
+            meta["_plan_items"] = [
+                {
+                    "sub_topic": item.get("sub_topic", ""),
+                    "angle": item.get("angle", ""),
+                    "difficulty": item.get("difficulty", ""),
+                    "question_type": item.get("question_type", ""),
+                }
+                for item in batch
+            ]
+        return meta
+
+    def _parse(self, response_text: str, metadata: dict = None) -> list[GenerationSample]:
+        plan_items = None
+        if metadata and "_plan_items" in metadata:
+            plan_items = metadata.pop("_plan_items")
+
+        samples = super()._parse(response_text, metadata)
+
+        if plan_items:
+            for i, sample in enumerate(samples):
+                if i < len(plan_items):
+                    if sample.metadata is None:
+                        sample.metadata = {}
+                    sample.metadata["sub_topic"] = plan_items[i]["sub_topic"]
+                    sample.metadata["angle"] = plan_items[i]["angle"]
+                    sample.metadata["difficulty"] = plan_items[i]["difficulty"]
+                    sample.metadata["question_type"] = plan_items[i]["question_type"]
+
+        return samples
 
     def estimated_count(self) -> int:
         return sum(entry["count"] for entry in self._plan)
