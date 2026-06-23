@@ -187,6 +187,6 @@ class AppConfig:
             scoring=scoring_cfg,
             output=output_cfg,
             dry_run=data.get("dry_run", False),
-            count=int(data.get("count", 100)),
+            count=int(data.get("count", 0)),
             random_seed=data.get("random_seed"),
         )

@@ -13,6 +13,14 @@ class FakeAPI(BaseAPIClient):
         return True
 
     def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        system = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
+            return json.dumps([
+                {"sub_topic": "basics", "angle": "explain basic concepts",
+                 "difficulty": "beginner", "question_type": "concept_explanation"},
+                {"sub_topic": "advanced", "angle": "compare advanced techniques",
+                 "difficulty": "advanced", "question_type": "comparison"},
+            ])
         return json.dumps({
             "instruction": "test instruction here",
             "output": "test output data here for testing",
@@ -24,6 +32,12 @@ class FakeMultiTurnAPI(BaseAPIClient):
         return True
 
     def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        system = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
+            return json.dumps([
+                {"sub_topic": "basics", "angle": "explain basic concepts",
+                 "difficulty": "beginner", "question_type": "concept_explanation"},
+            ])
         return json.dumps({
             "messages": [
                 {"role": "user", "content": "What is Python?"},
@@ -35,10 +49,27 @@ class FakeMultiTurnAPI(BaseAPIClient):
 
 
 class FakeBatchAPI(BaseAPIClient):
+    _plan_counter = 0
+
     def supports_json_mode(self):
         return True
 
     def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        system = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
+            user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
+            import re
+            match = re.search(r"Create a structured plan of (\d+)", user_msg)
+            if not match:
+                match = re.search(r"创建 (\d+) 个", user_msg)
+            count = int(match.group(1)) if match else 1
+            items = []
+            for i in range(count):
+                c = FakeBatchAPI._plan_counter
+                FakeBatchAPI._plan_counter += 1
+                items.append({"sub_topic": f"sub_{c}", "angle": f"angle_{c}",
+                              "difficulty": "intermediate", "question_type": "concept_explanation"})
+            return json.dumps(items)
         import re
         user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
         match = re.search(r"Generate (\d+) diverse", user_msg)
@@ -54,6 +85,21 @@ class FakeBatchMultiTurnAPI(BaseAPIClient):
         return True
 
     def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+        system = next((m["content"] for m in messages if m.get("role") == "system"), "")
+        if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
+            user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
+            import re
+            match = re.search(r"Create a structured plan of (\d+)", user_msg)
+            if not match:
+                match = re.search(r"创建 (\d+) 个", user_msg)
+            count = int(match.group(1)) if match else 1
+            items = []
+            for i in range(count):
+                c = FakeBatchAPI._plan_counter
+                FakeBatchAPI._plan_counter += 1
+                items.append({"sub_topic": f"sub_{c}", "angle": f"angle_{c}",
+                              "difficulty": "intermediate", "question_type": "concept_explanation"})
+            return json.dumps(items)
         import re
         user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
         match = re.search(r"Generate (\d+) diverse", user_msg)
@@ -94,11 +140,13 @@ def fake_multi_turn_api():
 
 @pytest.fixture
 def fake_batch_api():
+    FakeBatchAPI._plan_counter = 0
     return FakeBatchAPI()
 
 
 @pytest.fixture
 def fake_batch_multi_turn_api():
+    FakeBatchAPI._plan_counter = 0
     return FakeBatchMultiTurnAPI()
 
 

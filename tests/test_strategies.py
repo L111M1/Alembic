@@ -36,10 +36,11 @@ class TestTopicDriven:
             "samples_per_topic": 5,
         })
         prompts = list(strategy.iter_prompts())
-        assert len(prompts) == 2
+        assert len(prompts) == 6
         for _pid, messages in prompts:
             user = messages[-1]["content"]
-            assert "Generate 5 diverse" in user
+            assert "Generate" in user
+            assert "PLAN" in user
 
     def test_batch_generates_correct_sample_count(self, fake_batch_api):
         strategy = TopicDrivenStrategy(fake_batch_api, {
@@ -56,7 +57,7 @@ class TestTopicDriven:
             "max_samples_per_request": 10,
         })
         prompts = list(strategy.iter_prompts())
-        assert len(prompts) == 3
+        assert len(prompts) == 13
         counts = []
         for pid, messages in prompts:
             user = messages[-1]["content"]
@@ -64,7 +65,7 @@ class TestTopicDriven:
             m = re.search(r"Generate (\d+) diverse", user)
             if m:
                 counts.append(int(m.group(1)))
-        assert counts == [10, 10, 5]
+        assert sum(counts) == 25
 
     def test_batch_single_sample_per_topic(self, fake_batch_api):
         strategy = TopicDrivenStrategy(fake_batch_api, {
