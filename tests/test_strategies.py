@@ -34,6 +34,7 @@ class TestTopicDriven:
         strategy = TopicDrivenStrategy(fake_batch_api, {
             "topics": ["Math", "Physics"],
             "samples_per_topic": 5,
+            "execution_max_per_request": 10,
         })
         prompts = list(strategy.iter_prompts())
         assert len(prompts) == 2
@@ -60,6 +61,7 @@ class TestTopicDriven:
             "topics": ["CS"],
             "samples_per_topic": 25,
             "max_samples_per_request": 10,
+            "execution_max_per_request": 30,
         })
         prompts = list(strategy.iter_prompts())
         assert len(prompts) == 1
