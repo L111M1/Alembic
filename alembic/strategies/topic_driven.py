@@ -240,7 +240,7 @@ class TopicDrivenStrategy(GenerationStrategy):
 
             while remaining > 0:
                 batch_size = min(remaining, self._max_samples_per_request)
-                topic_items = self._plan_topic(
+                topic_items = self._plan_topic_with_retry(
                     topic, batch_size, knowledge, list(seen_angles),
                 )
                 for item in topic_items:
@@ -273,7 +273,7 @@ class TopicDrivenStrategy(GenerationStrategy):
 
         while remaining > 0:
             batch_size = min(remaining, self._max_samples_per_request)
-            topic_items = self._plan_topic(
+            topic_items = self._plan_topic_with_retry(
                 topic, batch_size, knowledge, list(seen_angles),
             )
             for item in topic_items:
@@ -326,12 +326,27 @@ class TopicDrivenStrategy(GenerationStrategy):
             existing_angles=angle_hint,
         )
         messages = builder.build()
-        raw = self._call_api(messages, use_json_mode=False)
+        raw = self._call_api(messages, use_json_mode=True)
         items = self._parse_plan_items(raw, topic)
         logger.info(
             f"Planning topic '{topic}': requested {count}, got {len(items)} items"
         )
         return items
+
+    def _plan_topic_with_retry(
+        self, topic: str, count: int, knowledge: str, existing_angles: list[str],
+    ) -> list[dict[str, Any]]:
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            items = self._plan_topic(topic, count, knowledge, existing_angles)
+            if items:
+                return items
+            if attempt < max_retries:
+                logger.warning(
+                    f"Planning topic '{topic}' got empty result, retry {attempt + 1}/{max_retries}"
+                )
+        logger.warning(f"Planning topic '{topic}' failed after {max_retries} attempts")
+        return []
 
     def _parse_plan_items(
         self, response_text: str, topic: str,

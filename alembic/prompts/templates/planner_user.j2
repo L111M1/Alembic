@@ -8,17 +8,19 @@ Each plan item must include:
 - "sub_topic": a specific sub-area under the topic
 - "angle": a unique question perspective/angle that is clearly different from all other items
 - "difficulty": one of [beginner, intermediate, advanced]
-- "question_type": one of [concept_explanation, comparison, application, true_false, short_answer, scenario, case_analysis, derivation]
+- "question_type": one of [concept_explanation, comparison, application, true_false, short_answer, scenario, case_analysis, derivation, multiple_choice]
 
 IMPORTANT: Ensure ALL {{ count }} angles are mutually distinct. No two items should share similar question patterns, perspectives, or structures. Each angle should explore the topic from a completely different direction.
 
-Output a pure JSON array only, no extra text:
-[
-  {
-    "sub_topic": "sub-area name",
-    "angle": "unique perspective description",
-    "difficulty": "intermediate",
-    "question_type": "concept_explanation"
-  },
-  ...
-]
+Output a pure JSON object only, no extra text:
+{
+  "items": [
+    {
+      "sub_topic": "sub-area name",
+      "angle": "unique perspective description",
+      "difficulty": "intermediate",
+      "question_type": "concept_explanation"
+    },
+    ...
+  ]
+}
