@@ -7,6 +7,7 @@ from alembic.cleaner.ops import (
     char_repetition_ratio,
     clean_text,
     compute_dedup_key,
+    minhash_dedup,
     special_char_ratio,
     word_repetition_ratio,
 )
@@ -25,6 +26,9 @@ class DatasetCleaner:
     def clean_file(self, input_path: str, output_path: str) -> tuple[int, int]:
         if self._config.embedding_dedup:
             return self._clean_with_embeddings(input_path, output_path)
+
+        if self._config.minhash_dedup:
+            return self._clean_with_minhash(input_path, output_path)
 
         with open(input_path, "r", encoding="utf-8") as fin, open(output_path, "w", encoding="utf-8") as fout:
             for line in fin:
@@ -271,6 +275,34 @@ class DatasetCleaner:
         if "messages" in sample:
             return " ".join(m.get("content", "") for m in sample["messages"])
         return sample.get("instruction", "") + " " + sample.get("output", "")
+
+    def _clean_with_minhash(self, input_path: str, output_path: str) -> tuple[int, int]:
+        candidates = self._load_candidates(input_path)
+        if not candidates:
+            logger.info(f"Cleaning done: kept=0, dropped={self._dropped_count}")
+            return 0, self._dropped_count
+
+        kept, _ = minhash_dedup(
+            candidates,
+            text_fn=self._sample_text,
+            threshold=self._config.minhash_threshold,
+            num_perm=self._config.minhash_num_perm,
+            ngram_n=self._config.minhash_ngram_n,
+        )
+
+        with open(output_path, "w", encoding="utf-8") as fout:
+            for sample in kept:
+                raw = sample.pop("_raw", None)
+                if raw and "messages" in raw and isinstance(raw["messages"], list):
+                    record = self._format_output({"_raw": raw}, sample["instruction"], sample["output"])
+                else:
+                    record = sample
+                fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        self._cleaned_count = len(kept)
+        self._dropped_count += len(candidates) - len(kept)
+        logger.info(f"MinHash dedup done: kept={self._cleaned_count}, dropped={self._dropped_count}")
+        return self._cleaned_count, self._dropped_count
 
     @property
     def stats(self) -> tuple[int, int]:

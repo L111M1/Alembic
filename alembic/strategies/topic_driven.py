@@ -128,39 +128,42 @@ class TopicDrivenStrategy(GenerationStrategy):
         batch_idx = 0
         for topic, topic_items in by_topic.items():
             knowledge = topic_items[0].get("_topic_knowledge", "") if topic_items else ""
-            batch = topic_items
 
-            plan_lines = self._format_plan_batch(batch)
-            sub_topic_list = ", ".join(
-                item.get("sub_topic", "") for item in batch if item.get("sub_topic")
-            )
+            exec_max = max(1, self._execution_max_per_request)
+            for chunk_start in range(0, len(topic_items), exec_max):
+                chunk = topic_items[chunk_start:chunk_start + exec_max]
 
-            builder = PromptBuilder(lang=self._lang)
-            builder.from_template(f"topic_driven_system{suffix}.j2")
-            builder.from_template(
-                f"topic_driven_user{suffix}.j2",
-                topic=topic,
-                knowledge=knowledge,
-                count=len(batch),
-            )
-            messages = builder.build()
+                plan_lines = self._format_plan_batch(chunk)
+                sub_topic_list = ", ".join(
+                    item.get("sub_topic", "") for item in chunk if item.get("sub_topic")
+                )
 
-            plan_header = (
-                f"\n\n--- PLAN ---\n"
-                f"Sub-topics: {sub_topic_list}\n\n"
-                f"MUST generate exactly {len(batch)} samples following these specifications "
-                f"(one per item, same order):\n"
-                f"{plan_lines}\n\n"
-                f"CRITICAL: Every sample must differ substantially in instruction, output, and structure. No two samples may resemble each other."
-                f"\n--- END PLAN ---"
-            )
-            if messages and messages[-1]["role"] == "user":
-                messages[-1]["content"] += plan_header
+                builder = PromptBuilder(lang=self._lang)
+                builder.from_template(f"topic_driven_system{suffix}.j2")
+                builder.from_template(
+                    f"topic_driven_user{suffix}.j2",
+                    topic=topic,
+                    knowledge=knowledge,
+                    count=len(chunk),
+                )
+                messages = builder.build()
 
-            prompt_id = f"topic:{topic}"
-            self._plan_lookup[prompt_id] = batch
-            yield (prompt_id, messages)
-            batch_idx += 1
+                plan_header = (
+                    f"\n\n--- PLAN ---\n"
+                    f"Sub-topics: {sub_topic_list}\n\n"
+                    f"MUST generate exactly {len(chunk)} samples following these specifications "
+                    f"(one per item, same order):\n"
+                    f"{plan_lines}\n\n"
+                    f"CRITICAL: Every sample must differ substantially in instruction, output, and structure. No two samples may resemble each other."
+                    f"\n--- END PLAN ---"
+                )
+                if messages and messages[-1]["role"] == "user":
+                    messages[-1]["content"] += plan_header
+
+                prompt_id = f"topic:{topic}" if len(topic_items) <= exec_max else f"topic:{topic}:batch{batch_idx}"
+                self._plan_lookup[prompt_id] = chunk
+                yield (prompt_id, messages)
+                batch_idx += 1
 
     def _format_plan_batch(self, batch: list[dict[str, Any]]) -> str:
         lines = []

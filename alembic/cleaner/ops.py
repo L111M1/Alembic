@@ -85,3 +85,60 @@ def char_repetition_ratio(text: str, min_len: int = 5) -> float:
 
 def compute_dedup_key(text: str) -> str:
     return hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
+
+
+def tokenize_ngrams(text: str, n: int = 3) -> list[str]:
+    chars = text.strip().lower()
+    if len(chars) < n:
+        return [chars] if chars else []
+    return [chars[i:i + n] for i in range(len(chars) - n + 1)]
+
+
+def minhash_signature(tokens: list[str], num_perm: int = 128, seed: int = 42) -> list[int]:
+    if not tokens:
+        return [0] * num_perm
+    sig = []
+    for i in range(num_perm):
+        min_hash = 0xFFFFFFFFFFFFFFFF
+        for token in tokens:
+            h = hashlib.sha256(f"{seed}:{i}:{token}".encode("utf-8")).digest()
+            val = int.from_bytes(h[:8], "big")
+            if val < min_hash:
+                min_hash = val
+        sig.append(min_hash)
+    return sig
+
+
+def minhash_similarity(sig_a: list[int], sig_b: list[int]) -> float:
+    if len(sig_a) != len(sig_b) or len(sig_a) == 0:
+        return 0.0
+    matches = sum(1 for a, b in zip(sig_a, sig_b) if a == b)
+    return matches / len(sig_a)
+
+
+def minhash_dedup(
+    samples: list[dict],
+    text_fn,
+    threshold: float = 0.7,
+    num_perm: int = 128,
+    ngram_n: int = 3,
+) -> tuple[list[dict], list[int]]:
+    import numpy as np
+
+    texts = [text_fn(s) for s in samples]
+    signatures = [minhash_signature(tokenize_ngrams(t, ngram_n), num_perm) for t in texts]
+
+    keep_mask = [True] * len(samples)
+    sign_arr = np.array(signatures, dtype=np.uint64)
+
+    for i in range(len(samples)):
+        if not keep_mask[i]:
+            continue
+        matches = np.sum(sign_arr[i] == sign_arr[i + 1:], axis=1)
+        sims = matches / num_perm
+        for j in np.where(sims >= threshold)[0]:
+            keep_mask[i + 1 + j] = False
+
+    kept = [s for s, m in zip(samples, keep_mask) if m]
+    dropped_indices = [idx for idx, m in enumerate(keep_mask) if not m]
+    return kept, dropped_indices
