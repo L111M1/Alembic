@@ -1,7 +1,6 @@
 from alembic.cleaner.cleaner import DatasetCleaner as DatasetCleaner
 from alembic.cleaner.dedup import (
     DedupStrategy as DedupStrategy,
-    ExactDedup as ExactDedup,
     MinHashDedup as MinHashDedup,
     NoDedup as NoDedup,
     SemanticDedup as SemanticDedup,

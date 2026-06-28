@@ -7,7 +7,7 @@ class TestAppConfig:
         assert cfg.api.model == "qwen-plus"
         assert len(cfg.strategies) == 3
         assert cfg.cleaner.remove_html is True
-        assert cfg.cleaner.dedup is True
+        assert cfg.cleaner.minhash_dedup is True
         assert cfg.quality.output_min_len == 10
         assert cfg.scoring.enabled is False
         assert len(cfg.scoring.dimensions) == 4

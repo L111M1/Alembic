@@ -13,7 +13,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, output_max_len=8000, dedup=False)
+        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, output_max_len=8000, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, dropped = cleaner.clean_file(path, out)
         assert kept == 2
@@ -25,7 +25,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(instruction_min_len=3, output_min_len=10)
+        cfg = CleanerConfig(instruction_min_len=3, output_min_len=10, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, _ = cleaner.clean_file(path, out)
         assert kept == 1
@@ -43,7 +43,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=15, dedup=False)
+        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=15, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, dropped = cleaner.clean_file(path, out)
         assert kept == 1
@@ -58,7 +58,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=5, dedup=False)
+        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=5, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, _ = cleaner.clean_file(path, out)
         assert kept == 1
@@ -77,7 +77,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, dedup=False)
+        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, _ = cleaner.clean_file(path, out)
         assert kept == 2

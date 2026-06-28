@@ -9,7 +9,7 @@ import abc
 import logging
 from typing import Callable, Optional
 
-from alembic.cleaner.ops import compute_dedup_key, minhash_dedup
+from alembic.cleaner.ops import minhash_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -29,21 +29,6 @@ class DedupStrategy(abc.ABC):
 class NoDedup(DedupStrategy):
     def filter(self, candidates: list[dict]) -> list[dict]:
         return candidates
-
-
-class ExactDedup(DedupStrategy):
-    def __init__(self):
-        self._seen: set[str] = set()
-
-    def filter(self, candidates: list[dict]) -> list[dict]:
-        kept: list[dict] = []
-        for sample in candidates:
-            key = compute_dedup_key(sample.get("instruction", "") + sample.get("output", ""))
-            if key in self._seen:
-                continue
-            self._seen.add(key)
-            kept.append(sample)
-        return kept
 
 
 class MinHashDedup(DedupStrategy):
@@ -132,8 +117,7 @@ class SemanticDedup(DedupStrategy):
 def build_dedup_strategy(config) -> DedupStrategy:
     """Select the dedup strategy based on :class:`CleanerConfig` flags.
 
-    Priority mirrors the original ``DatasetCleaner.clean_file`` branching:
-    semantic > minhash > exact > none.
+    Priority: semantic > minhash > none (default: MinHash).
     """
     if config.embedding_dedup:
         return SemanticDedup(
@@ -149,6 +133,4 @@ def build_dedup_strategy(config) -> DedupStrategy:
             num_perm=config.minhash_num_perm,
             ngram_n=config.minhash_ngram_n,
         )
-    if config.dedup:
-        return ExactDedup()
     return NoDedup()

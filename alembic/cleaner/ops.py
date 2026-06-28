@@ -83,10 +83,6 @@ def char_repetition_ratio(text: str, min_len: int = 5) -> float:
     return max_run / len(text)
 
 
-def compute_dedup_key(text: str) -> str:
-    return hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
-
-
 def tokenize_ngrams(text: str, n: int = 3) -> list[str]:
     chars = text.strip().lower()
     if len(chars) < n:

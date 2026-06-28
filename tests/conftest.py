@@ -226,7 +226,7 @@ def sample_config_yaml():
             ],
         },
         "quality": {"instruction_min_len": 5, "instruction_max_len": 2000, "output_min_len": 10, "output_max_len": 6000, "dedup": True},
-        "cleaner": {"remove_html": True, "remove_urls": True, "remove_emails": True, "dedup": True},
+        "cleaner": {"remove_html": True, "remove_urls": True, "remove_emails": True, "minhash_dedup": True},
         "output": {"path": "./test_output.jsonl", "format": "alpaca", "multi_turn": False},
     }
     fd, path = tempfile.mkstemp(suffix=".yaml")
