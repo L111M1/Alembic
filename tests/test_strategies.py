@@ -1,5 +1,4 @@
 from alembic.prompts.builder import load_seeds
-from alembic.strategies.base import GenerationStrategy
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.self_instruct import SelfInstructStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy

@@ -7,6 +7,7 @@ from typing import Optional
 
 from alembic.config import QualityConfig
 from alembic.core.types import GenerationSample
+from alembic.quality.rules import QualityRuleSet
 
 logger = logging.getLogger(__name__)
 
@@ -30,28 +31,24 @@ class QualityValidator(abc.ABC):
     def _do_validate(self, sample: GenerationSample) -> bool: ...
 
 
+def _extract_inst_out(sample: GenerationSample) -> tuple[str, str]:
+    if sample.is_multi_turn:
+        inst = " ".join(m["content"] for m in sample.messages if m.get("role") == "user")
+        out = " ".join(m["content"] for m in sample.messages if m.get("role") == "assistant")
+    else:
+        inst = sample.instruction
+        out = sample.output
+    return inst, out
+
+
 class LengthValidator(QualityValidator):
     def __init__(self, config: QualityConfig):
         super().__init__()
-        self._inst_min = config.instruction_min_len
-        self._inst_max = config.instruction_max_len
-        self._out_min = config.output_min_len
-        self._out_max = config.output_max_len
+        self._rules = QualityRuleSet.for_quality_config(config)
 
     def _do_validate(self, sample: GenerationSample) -> bool:
-        if sample.is_multi_turn:
-            inst = " ".join(m["content"] for m in sample.messages if m.get("role") == "user")
-            out = " ".join(m["content"] for m in sample.messages if m.get("role") == "assistant")
-        else:
-            inst = sample.instruction
-            out = sample.output
-        ilen = len(inst)
-        olen = len(out)
-        if ilen < self._inst_min or ilen > self._inst_max:
-            return False
-        if olen < self._out_min or olen > self._out_max:
-            return False
-        return True
+        inst, out = _extract_inst_out(sample)
+        return self._rules.check(inst, out)
 
 
 class TruncationValidator(QualityValidator):
@@ -99,7 +96,9 @@ class DedupValidator(QualityValidator):
 
 
 def build_validator_chain(config: QualityConfig) -> QualityValidator:
-    chain = LengthValidator(config)
-    chain.set_next(TruncationValidator(config.remove_truncated))
-    chain.set_next(DedupValidator(config.dedup))
-    return chain
+    length = LengthValidator(config)
+    trunc = TruncationValidator(config.remove_truncated)
+    dedup = DedupValidator(config.dedup)
+    length.set_next(trunc)
+    trunc.set_next(dedup)
+    return length
