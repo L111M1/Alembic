@@ -2,6 +2,10 @@ import json
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
+
+from alembic.cleaner.ops import minhash_signature, tokenize_ngrams
+
 
 def _compute_distribution(values: list[float]) -> dict:
     if not values:
@@ -41,6 +45,7 @@ class DatasetInspector:
         self._scores: Counter = Counter()
         self._score_dims: dict[str, list[float]] = {}
         self._score_dim_names: list[str] = []
+        self._sample_texts: list[str] = []
 
     def inspect_file(self, path: str) -> dict:
         with open(path, "r", encoding="utf-8") as f:
@@ -92,6 +97,11 @@ class DatasetInspector:
         self._inst_lengths.append(_len_safe(inst))
         self._out_lengths.append(_len_safe(out))
 
+        if "messages" in item:
+            self._sample_texts.append(" ".join(m.get("content", "") for m in item.get("messages", [])))
+        else:
+            self._sample_texts.append(inst + " " + out)
+
         meta = item.get("metadata", {})
         if isinstance(meta, dict):
             topic = meta.get("topic")
@@ -138,7 +148,34 @@ class DatasetInspector:
 
         return report
 
-    def print_report(self, path: str) -> str:
+    def analyze_similarity(self, threshold: float = 0.7) -> dict:
+        """Compute MinHash pairwise similarity distribution."""
+        texts = self._sample_texts
+        n = len(texts)
+        if n < 2:
+            return {"count": n, "near_duplicates": 0, "threshold": threshold}
+
+        num_perm = 128
+        signatures = [minhash_signature(tokenize_ngrams(t), num_perm) for t in texts]
+        sign_arr = np.array(signatures, dtype=np.uint64)
+
+        max_sims: list[float] = []
+        for i in range(n):
+            matches = np.sum(sign_arr[i] == sign_arr[i + 1:], axis=1)
+            sims = matches.astype(np.float64) / num_perm
+            if len(sims) > 0:
+                max_sims.append(float(np.max(sims)))
+
+        near = sum(1 for s in max_sims if s >= threshold)
+        return {
+            "count": n,
+            "near_duplicates": near,
+            "duplicate_ratio": round(near / max(n, 1), 3),
+            "threshold": threshold,
+            "max_similarity_distribution": _compute_distribution(max_sims) if max_sims else {"count": 0},
+        }
+
+    def print_report(self, path: str, quality: bool = False) -> str:
         report = self.inspect_file(path)
         lines = []
         lines.append("")
@@ -172,6 +209,18 @@ class DatasetInspector:
             for dim, dist in report["scoring"].items():
                 lines.append(f"    {dim}: min={dist['min']}, max={dist['max']}, "
                              f"mean={dist['mean']}, median={dist['median']}")
+
+        if quality:
+            sim = self.analyze_similarity()
+            dist = sim.get("max_similarity_distribution", {})
+            if dist.get("count", 0) > 0:
+                lines.append("  Similarity (max MinHash):")
+                lines.append(f"    near-duplicates: {sim['near_duplicates']} ({sim['duplicate_ratio']:.1%} @ >= {sim['threshold']:.0%})")
+                lines.append(f"    min={dist['min']:.3f}, max={dist['max']:.3f}, "
+                             f"mean={dist['mean']:.3f}, median={dist['median']:.3f}, "
+                             f"p25={dist['p25']:.3f}, p75={dist['p75']:.3f}, p90={dist['p90']:.3f}")
+            else:
+                lines.append(f"  Similarity: {sim['count']} samples, 0 pairwise (insufficient data)")
 
         lines.append("")
         return "\n".join(lines)

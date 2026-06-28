@@ -118,15 +118,18 @@ def score(input_file: str, output: str, config: str, concurrency: int):
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("--samples", "-n", type=int, default=3, help="Number of sample rows to display")
 @click.option("--json", "-j", "as_json", is_flag=True, help="Output report as JSON")
-def view(input_file: str, samples: int, as_json: bool):
+@click.option("--quality", "-q", is_flag=True, help="Include MinHash similarity analysis")
+def view(input_file: str, samples: int, as_json: bool, quality: bool):
     """View a JSONL dataset: statistics, distribution, and sample rows"""
     inspector = DatasetInspector()
     if as_json:
         import json as json_mod
         report = inspector.inspect_file(input_file)
+        if quality:
+            report["similarity"] = inspector.analyze_similarity()
         print(json_mod.dumps(report, ensure_ascii=False, indent=2))
     else:
-        out = inspector.print_report(input_file)
+        out = inspector.print_report(input_file, quality=quality)
         print(out)
         if samples > 0:
             out2 = inspector.print_samples(input_file, n=samples)
