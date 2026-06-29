@@ -20,11 +20,11 @@ Every sample MUST include a "reasoning" field with step-by-step thought process 
 Output a pure JSON array only, no extra text:
 [
   {
+    {%- if require_reasoning %}
+    "reasoning": "step-by-step reasoning before answer",
+    {%- endif %}
     "instruction": "user instruction",
     "output": "assistant answer"
-    {%- if require_reasoning %},
-    "reasoning": "step-by-step reasoning before answer"
-    {%- endif %}
   },
   ...
 ]
