@@ -12,6 +12,9 @@ user: Generate {{ count }} diverse SFT training samples for the topic "{{ topic 
 {% if sub_topics %}Every sub-topic below must be covered at least once — do not concentrate all samples on a few sub-topics: {{ sub_topic_list }}{% endif %}
 The {{ count }} samples must cover a variety of difficulties (beginner, intermediate, advanced) and question types (qa, choice, judge, fill). No two samples should have similar question angles or structure.
 {% endif %}
+{% if require_reasoning %}
+Every sample MUST include a "reasoning" field with step-by-step thought process before the answer.
+{% endif %}
 {% if knowledge %}Use the following background knowledge to ensure accuracy:
 {{ knowledge }}{% endif %}
 Output a pure JSON array only, no extra text:
@@ -19,6 +22,9 @@ Output a pure JSON array only, no extra text:
   {
     "instruction": "user instruction",
     "output": "assistant answer"
+    {%- if require_reasoning %},
+    "reasoning": "step-by-step reasoning before answer"
+    {%- endif %}
   },
   ...
 ]

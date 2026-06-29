@@ -30,6 +30,7 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._execution_max_per_request = int(params.get("execution_max_per_request", 2))
         self._dimensions = params.get("dimensions", self._DEFAULT_DIMENSIONS)
         self._dim_names = [d["name"] for d in self._dimensions]
+        self._require_reasoning = bool(params.get("require_reasoning", False))
         self._plan: list[dict[str, Any]] = self._build_plan()
         self._plan_items: Optional[list[dict[str, Any]]] = None
         self._plan_lookup: dict[str, list[dict[str, Any]]] = {}
@@ -120,6 +121,7 @@ class TopicDrivenStrategy(GenerationStrategy):
                     topic=topic,
                     knowledge=knowledge,
                     count=len(chunk),
+                    require_reasoning=self._require_reasoning,
                 )
                 messages = builder.build()
 

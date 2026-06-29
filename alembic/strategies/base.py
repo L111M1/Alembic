@@ -126,7 +126,8 @@ class GenerationStrategy(abc.ABC):
                 else:
                     instruction = item.get("instruction", "").strip()
                     output = item.get("output", "").strip()
-                    sample = GenerationSample(instruction=instruction, output=output)
+                    reasoning = item.get("reasoning", "").strip()
+                    sample = GenerationSample(instruction=instruction, output=output, reasoning=reasoning)
                     if metadata:
                         sample.metadata = dict(metadata)
                     results.append(sample)
@@ -141,7 +142,8 @@ class GenerationStrategy(abc.ABC):
 
         instruction = data.get("instruction", "").strip()
         output = data.get("output", "").strip()
-        sample = GenerationSample(instruction=instruction, output=output)
+        reasoning = data.get("reasoning", "").strip()
+        sample = GenerationSample(instruction=instruction, output=output, reasoning=reasoning)
         if metadata:
             sample.metadata = metadata
         return [sample]

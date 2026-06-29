@@ -38,6 +38,8 @@ def format_sample(sample: GenerationSample, output_format: str) -> dict:
             record = {"conversations": conversations}
         else:
             record = {"messages": messages}
+        if sample.reasoning:
+            record["reasoning"] = sample.reasoning
         if sample.metadata:
             record["metadata"] = sample.metadata
         return record
@@ -57,9 +59,13 @@ def format_sample(sample: GenerationSample, output_format: str) -> dict:
         conversations.append({"from": "gpt", "value": sample.output})
         return {"conversations": conversations}
     else:
-        record = {"instruction": sample.instruction, "output": sample.output}
+        record = {}
         if sample.system:
             record["system"] = sample.system
+        record["instruction"] = sample.instruction
+        record["output"] = sample.output
+        if sample.reasoning:
+            record["reasoning"] = sample.reasoning
         if sample.metadata:
             record["metadata"] = sample.metadata
         return record

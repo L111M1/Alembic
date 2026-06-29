@@ -13,6 +13,7 @@ class SeedSample:
 class GenerationSample:
     instruction: str = ""
     output: str = ""
+    reasoning: str = ""
     system: str = ""
     messages: list[dict] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)

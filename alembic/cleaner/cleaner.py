@@ -30,27 +30,27 @@ class DatasetCleaner:
         return self._dedup_and_write(candidates, output_path)
 
     def clean_samples(self, samples: list[dict]) -> list[dict]:
-        """Clean a list of sample dicts in memory, returning deduped results."""
+        """Clean a list of sample dicts in memory: quality filter + dedup only."""
         candidates: list[dict] = []
         for sample in samples:
-            cleaned = self._basic_clean(sample)
-            if cleaned:
-                candidates.append(cleaned)
-            else:
+            inst = sample.get("instruction", "")
+            out = sample.get("output", "") or sample.get("response", "")
+            if not inst or not out:
                 self._dropped_count += 1
+                continue
+            inst = clean_text(inst)
+            out = clean_text(out)
+            if not self._rules.check(inst, out):
+                self._dropped_count += 1
+                continue
+            sample["instruction"] = inst
+            sample["output"] = out
+            candidates.append(sample)
         kept = self._dedup.filter(candidates)
         self._cleaned_count = len(kept)
         self._dropped_count += len(candidates) - len(kept)
-        results: list[dict] = []
-        for sample in kept:
-            raw = sample.pop("_raw", None)
-            if raw and "messages" in raw and isinstance(raw["messages"], list):
-                record = self._format_output({"_raw": raw}, sample["instruction"], sample["output"])
-            else:
-                record = sample
-            results.append(record)
         logger.info(f"Cleaning done: kept={self._cleaned_count}, dropped={self._dropped_count}")
-        return results
+        return kept
 
     def _dedup_and_write(self, candidates: list[dict], output_path: str) -> tuple[int, int]:
         kept = self._dedup.filter(candidates)
@@ -152,13 +152,19 @@ class DatasetCleaner:
             result = {"messages": cleaned_msgs}
             if raw.get("system"):
                 result["system"] = raw["system"]
+            if raw.get("reasoning"):
+                result["reasoning"] = raw["reasoning"]
             if raw.get("metadata"):
                 result["metadata"] = raw["metadata"]
             return result
         else:
-            result = {"instruction": inst, "output": out}
+            result = {}
             if normalized.get("system"):
                 result["system"] = normalized["system"]
+            result["instruction"] = inst
+            result["output"] = out
+            if normalized.get("reasoning"):
+                result["reasoning"] = normalized["reasoning"]
             if normalized.get("metadata"):
                 result["metadata"] = normalized["metadata"]
             return result
@@ -172,12 +178,17 @@ class DatasetCleaner:
         if not passed:
             return None
 
-        result = {"instruction": inst, "output": out}
+        result = {}
         if normalized.get("system"):
             result["system"] = normalized["system"]
+        result["instruction"] = inst
+        result["output"] = out
+        raw = normalized.get("_raw", {})
+        if raw.get("reasoning"):
+            result["reasoning"] = raw["reasoning"]
         if normalized.get("metadata"):
             result["metadata"] = normalized["metadata"]
-        result["_raw"] = normalized.get("_raw")
+        result["_raw"] = raw
         return result
 
     def _write(self, kept: list[dict], output_path: str) -> None:
