@@ -386,6 +386,7 @@ class TopicDrivenStrategy(GenerationStrategy):
                 "sub_topic": str(entry.get("sub_topic", "")).strip(),
                 "angle": str(entry.get("angle", "")).strip(),
                 "difficulty": str(entry.get("difficulty", "intermediate")).strip(),
+                "cognitive_level": str(entry.get("cognitive_level", "remember")).strip(),
                 "question_type": str(entry.get("question_type", "concept_explanation")).strip(),
             })
         return result
@@ -409,6 +410,7 @@ class TopicDrivenStrategy(GenerationStrategy):
                     "sub_topic": item.get("sub_topic", ""),
                     "angle": item.get("angle", ""),
                     "difficulty": item.get("difficulty", ""),
+                    "cognitive_level": item.get("cognitive_level", ""),
                     "question_type": item.get("question_type", ""),
                 }
                 for item in batch
@@ -427,10 +429,7 @@ class TopicDrivenStrategy(GenerationStrategy):
                 if i < len(plan_items):
                     if sample.metadata is None:
                         sample.metadata = {}
-                    sample.metadata["sub_topic"] = plan_items[i]["sub_topic"]
-                    sample.metadata["angle"] = plan_items[i]["angle"]
-                    sample.metadata["difficulty"] = plan_items[i]["difficulty"]
-                    sample.metadata["question_type"] = plan_items[i]["question_type"]
+                    sample.metadata.update(plan_items[i])
 
         return samples
 

@@ -1,6 +1,6 @@
 system: You are a high-quality SFT training data generation assistant. Generate multiple diverse training samples based on the given topic. Requirements:
-1. Each instruction should be a clear, natural user request or question — vary difficulty and question type across samples
-2. Each output should be accurate, detailed, and helpful — closely follow any provided background knowledge
+1. Each instruction should be a clear, natural user request or question — vary difficulty (beginner/intermediate/advanced), cognitive level (Bloom's: remember/understand/apply/analyze/evaluate/create), and question type across samples
+2. Each output should be accurate, detailed, and helpful — match the cognitive level: recall for remember, explanation for understand, implementation for apply, comparison/debug for analyze, judgment for evaluate, design for create
 3. All samples use the same JSON format {"instruction": "...", "output": "..."}. Vary content by question_type:
 
    qa     → instruction: open question; output: answer

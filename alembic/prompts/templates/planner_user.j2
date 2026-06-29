@@ -1,16 +1,34 @@
+{% set rem = count % 3 %}
+{% set d1 = count // 3 + 1 if rem >= 1 else count // 3 %}
+{% set d2 = count // 3 + 1 if rem >= 2 else count // 3 %}
+{% set d3 = count // 3 %}
+{% set qr = count % 4 %}
+{% set q1 = count // 4 + 1 if qr >= 1 else count // 4 %}
+{% set q2 = count // 4 + 1 if qr >= 2 else count // 4 %}
+{% set q3 = count // 4 + 1 if qr >= 3 else count // 4 %}
+{% set q4 = count // 4 %}
+{% set cr = count % 6 %}
+{% set c = count // 6 %}
 {% if existing_angles -%}
 {{ existing_angles }}
 {% endif -%}
 user: Create a structured plan of {{ count }} distinct sub-topics/angles for the topic "{{ topic }}".
 {% if knowledge %}Background knowledge: {{ knowledge }}{% endif %}
 
+Pre-assigned distribution — follow this EXACTLY:
+
+  difficulty:       {{ d1 }}x beginner, {{ d2 }}x intermediate, {{ d3 }}x advanced
+  cognitive level:  {% if c > 0 %}{{ c + 1 if cr >= 5 else c }}x remember, {{ c + 1 if cr >= 4 else c }}x understand, {{ c + 1 if cr >= 3 else c }}x apply, {{ c + 1 if cr >= 2 else c }}x analyze, {{ c + 1 if cr >= 1 else c }}x evaluate, {{ c }}x create{% else %}distribute evenly across all 6 levels (remember/understand/apply/analyze/evaluate/create){% endif %}
+  question type:    {{ q1 }}x qa, {{ q2 }}x choice, {{ q3 }}x judge, {{ q4 }}x fill
+
 Each plan item must include:
 - "sub_topic": a specific sub-area under the topic
 - "angle": a unique question perspective/angle that is clearly different from all other items
 - "difficulty": one of [beginner, intermediate, advanced]
+- "cognitive_level": one of [remember, understand, apply, analyze, evaluate, create]
 - "question_type": one of [qa, choice, judge, fill]
 
-IMPORTANT: Ensure ALL {{ count }} angles are mutually distinct. No two items should share similar question patterns, perspectives, or structures. Each angle should explore the topic from a completely different direction.
+IMPORTANT: Ensure ALL {{ count }} angles are mutually distinct. No two items should share similar question patterns, perspectives, or structures.
 
 Output a pure JSON object only, no extra text:
 {
@@ -18,7 +36,8 @@ Output a pure JSON object only, no extra text:
     {
       "sub_topic": "sub-area name",
       "angle": "unique perspective description",
-      "difficulty": "intermediate",
+      "difficulty": "beginner",
+      "cognitive_level": "remember",
       "question_type": "qa"
     },
     ...
