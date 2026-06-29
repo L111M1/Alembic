@@ -1,5 +1,7 @@
+import itertools
 import json
 import logging
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional
 
@@ -26,7 +28,6 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._multi_turn = bool(params.get("multi_turn", False))
         self._max_samples_per_request = int(params.get("max_samples_per_request", 10))
         self._execution_max_per_request = int(params.get("execution_max_per_request", 2))
-        self._two_stage = bool(params.get("two_stage", True))
         self._dimensions = params.get("dimensions", self._DEFAULT_DIMENSIONS)
         self._dim_names = [d["name"] for d in self._dimensions]
         self._plan: list[dict[str, Any]] = self._build_plan()
@@ -82,41 +83,7 @@ class TopicDrivenStrategy(GenerationStrategy):
     # ── iter_prompts dispatch ──────────────────────────────────────────
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
-        if self._two_stage:
-            yield from self._iter_prompts_two_stage()
-        else:
-            yield from self._iter_prompts_one_stage()
-
-    # ── one-stage (original behaviour) ─────────────────────────────────
-
-    def _iter_prompts_one_stage(self) -> Iterator[tuple[str, list[dict]]]:
-        suffix = "_mt" if self._multi_turn else ""
-        max_batch = self._max_samples_per_request
-        for entry in self._plan:
-            topic = entry["topic"]
-            knowledge = entry.get("knowledge", "")
-            total = entry["count"]
-            remaining = total
-            batch_idx = 0
-            while remaining > 0:
-                batch_count = min(remaining, max_batch)
-                remaining -= batch_count
-                builder = PromptBuilder(lang=self._lang)
-                builder.from_template(f"topic_driven_system{suffix}.j2")
-                builder.from_template(
-                    f"topic_driven_user{suffix}.j2",
-                    topic=topic, knowledge=knowledge, count=batch_count,
-                )
-                messages = builder.build()
-                prompt_id = (
-                    f"topic:{topic}:batch{batch_idx}"
-                    if total > max_batch
-                    else f"topic:{topic}"
-                )
-                yield (prompt_id, messages)
-                batch_idx += 1
-
-    # ── two-stage: plan → execute ──────────────────────────────────────
+        yield from self._iter_prompts_two_stage()
 
     def _iter_prompts_two_stage(self) -> Iterator[tuple[str, list[dict]]]:
         if self._plan_items is None:
@@ -186,10 +153,6 @@ class TopicDrivenStrategy(GenerationStrategy):
             return []
 
         max_workers = min(self._concurrency, len(self._plan))
-
-        if max_workers <= 1:
-            return self._run_planning_sequential()
-
         logger.info(f"Planning {len(self._plan)} topics in parallel (workers={max_workers})")
         all_items: list[dict[str, Any]] = []
 
@@ -232,65 +195,38 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._log_plan_breakdown(deduped)
         return deduped
 
-    def _run_planning_sequential(self) -> list[dict[str, Any]]:
-        all_items: list[dict[str, Any]] = []
+    def _plan_single_topic(
+        self, topic: str, count: int, knowledge: str,
+    ) -> list[dict[str, Any]]:
+        slots = self._generate_orthogonal_slots(count)
+        batches = [slots[i:i + self._max_samples_per_request] for i in range(0, len(slots), self._max_samples_per_request)]
+
+        max_workers = min(self._concurrency, len(batches))
+        items: list[dict[str, Any]] = []
         seen_angles: set[str] = set()
 
-        for entry in self._plan:
-            topic = entry["topic"]
-            knowledge = entry.get("knowledge", "")
-            remaining = entry["count"]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for i, batch in enumerate(batches):
+                f = executor.submit(self._plan_slots_with_retry, topic, batch, knowledge)
+                futures[f] = i
 
-            while remaining > 0:
-                batch_size = min(remaining, self._max_samples_per_request)
-                topic_items = self._plan_topic_with_retry(
-                    topic, batch_size, knowledge, list(seen_angles),
-                )
-                for item in topic_items:
+            for f in as_completed(futures):
+                batch_idx = futures[f]
+                try:
+                    batch_items = f.result()
+                except Exception as e:
+                    logger.error(f"Plan topic '{topic}' batch {batch_idx} failed: {e}")
+                    continue
+                for item in batch_items:
                     item["topic"] = topic
                     item["_topic_knowledge"] = knowledge
                     angle_key = self._normalize_angle(item.get("angle", ""))
                     if angle_key and angle_key not in seen_angles:
                         seen_angles.add(angle_key)
-                        all_items.append(item)
+                        items.append(item)
                     else:
-                        logger.debug(
-                            f"Skipping duplicate angle: {item.get('angle', '')[:80]}"
-                        )
-                remaining -= batch_size
-
-        logger.info(
-            f"Planning complete: {len(all_items)} unique items "
-            f"across {len(self._plan)} topics "
-            f"(filtered {sum(e['count'] for e in self._plan) - len(all_items)} duplicates)"
-        )
-        self._log_plan_breakdown(all_items)
-        return all_items
-
-    def _plan_single_topic(
-        self, topic: str, count: int, knowledge: str,
-    ) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        seen_angles: set[str] = set()
-        remaining = count
-
-        while remaining > 0:
-            batch_size = min(remaining, self._max_samples_per_request)
-            topic_items = self._plan_topic_with_retry(
-                topic, batch_size, knowledge, list(seen_angles),
-            )
-            for item in topic_items:
-                item["topic"] = topic
-                item["_topic_knowledge"] = knowledge
-                angle_key = self._normalize_angle(item.get("angle", ""))
-                if angle_key and angle_key not in seen_angles:
-                    seen_angles.add(angle_key)
-                    items.append(item)
-                else:
-                    logger.debug(
-                        f"Skipping duplicate angle: {item.get('angle', '')[:80]}"
-                    )
-            remaining -= batch_size
+                        logger.debug(f"Skipping duplicate angle: {item.get('angle', '')[:80]}")
 
         return items
 
@@ -299,79 +235,61 @@ class TopicDrivenStrategy(GenerationStrategy):
         for item in items:
             t = item.get("topic", "(unknown)")
             by_topic.setdefault(t, []).append(item)
-
         for topic, topic_items in sorted(by_topic.items()):
             sub_topic_counts: dict[str, int] = {}
             for item in topic_items:
                 st = item.get("sub_topic", "") or "(unnamed)"
                 sub_topic_counts[st] = sub_topic_counts.get(st, 0) + 1
-
             parts = [f"{st}({cnt})" for st, cnt in sorted(sub_topic_counts.items(), key=lambda x: -x[1])]
             logger.info(f"  [{topic}] {len(topic_items)} items: {', '.join(parts[:8])}{'...' if len(parts) > 8 else ''}")
 
-    def _plan_topic(
-        self, topic: str, count: int, knowledge: str, existing_angles: list[str],
-    ) -> list[dict[str, Any]]:
-        distributions = []
-        for dim in self._dimensions:
-            vals = dim["vals"]
-            n = len(vals)
-            base = count // n
-            rem = count % n
-            counts = [(base + 1) if i < rem else base for i in range(n)]
-            distributions.append({"name": dim["name"], "vals": vals, "counts": counts})
+    def _generate_orthogonal_slots(self, count: int) -> list[dict[str, Any]]:
+        all_vals = [dim["vals"] for dim in self._dimensions]
+        all_combos = list(itertools.product(*all_vals))
+        dim_names = [d["name"] for d in self._dimensions]
+        total = len(all_combos)
 
+        slots = []
+        for i in range(count):
+            if i > 0 and i % total == 0:
+                all_combos = list(itertools.product(*all_vals))
+            combo = all_combos.pop(random.randint(0, len(all_combos) - 1))
+            slot = {dim_names[j]: combo[j] for j in range(len(dim_names))}
+            slots.append(slot)
+        return slots
+
+    def _plan_slots_with_retry(
+        self, topic: str, slots: list[dict[str, Any]], knowledge: str,
+    ) -> list[dict[str, Any]]:
+        try:
+            return retry_with_backoff(
+                lambda: self._plan_slots(topic, slots, knowledge),
+                RetryConfig(max_retries=3),
+                f"Plan topic '{topic}' (batch {len(slots)})",
+            )
+        except RuntimeError as e:
+            logger.warning(f"Plan topic '{topic}' batch failed: {e}")
+            return []
+
+    def _plan_slots(
+        self, topic: str, slots: list[dict[str, Any]], knowledge: str,
+    ) -> list[dict[str, Any]]:
         builder = PromptBuilder(lang=self._lang)
         builder.from_template("planner_system.j2")
-
-        angle_hint = ""
-        if existing_angles:
-            recent = existing_angles[-30:]
-            angle_hint = "Already planned angles across all topics — DO NOT reuse any of these:\n"
-            angle_hint += "\n".join(f"  - {a}" for a in recent)
-
         builder.from_template(
             "planner_user.j2",
             topic=topic,
-            count=count,
             knowledge=knowledge,
-            existing_angles=angle_hint,
             dimensions=self._dimensions,
-            distributions=distributions,
+            slots=slots,
         )
         messages = builder.build()
         raw = self._call_api(messages, use_json_mode=True)
         items = self._parse_plan_items(raw, topic)
         logger.info(
-            f"Planning topic '{topic}': requested {count}, got {len(items)} items"
+            f"Planning topic '{topic}': batch {len(slots)}, got {len(items)} items"
         )
         return items
-
-    def _plan_topic_with_retry(
-        self, topic: str, count: int, knowledge: str, existing_angles: list[str],
-    ) -> list[dict[str, Any]]:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                items = retry_with_backoff(
-                    lambda: self._plan_topic(topic, count, knowledge, existing_angles),
-                    RetryConfig(max_retries=1),
-                    f"Plan topic '{topic}'",
-                )
-            except RuntimeError as e:
-                if attempt == max_retries - 1:
-                    logger.warning(f"Planning topic '{topic}' failed after {max_retries} attempts: {e}")
-                    return []
-                logger.warning(f"Planning topic '{topic}' error (attempt {attempt + 1}/{max_retries}): {e}")
-                continue
-            if items:
-                return items
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Planning topic '{topic}' got empty result, retry {attempt + 2}/{max_retries}"
-                )
-        logger.warning(f"Planning topic '{topic}' failed after {max_retries} attempts")
-        return []
 
     def _parse_plan_items(
         self, response_text: str, topic: str,
@@ -431,11 +349,12 @@ class TopicDrivenStrategy(GenerationStrategy):
         return meta
 
     def _parse(self, response_text: str, metadata: dict = None) -> list[GenerationSample]:
-        plan_items = None
-        if metadata and "_plan_items" in metadata:
-            plan_items = metadata.pop("_plan_items")
+        plan_items = metadata.pop("_plan_items", None) if metadata else None
+        if metadata is not None and plan_items is not None:
+            metadata["_plan_items"] = plan_items
 
-        samples = super()._parse(response_text, metadata)
+        clean_meta = {k: v for k, v in (metadata or {}).items() if k != "_plan_items"} if metadata else None
+        samples = super()._parse(response_text, clean_meta)
 
         if plan_items:
             for i, sample in enumerate(samples):
@@ -443,7 +362,6 @@ class TopicDrivenStrategy(GenerationStrategy):
                     if sample.metadata is None:
                         sample.metadata = {}
                     sample.metadata.update(plan_items[i])
-
         return samples
 
     def estimated_count(self) -> int:

@@ -1,32 +1,22 @@
-{% if existing_angles -%}
-{{ existing_angles }}
-{% endif -%}
-user: Create a structured plan of {{ count }} distinct sub-topics/angles for the topic "{{ topic }}".
-{% if knowledge %}Background knowledge: {{ knowledge }}{% endif %}
+user: For topic "{{ topic }}", fill sub_topic and angle for each pre-assigned slot. Keep all dimension values exactly as listed — only write sub_topic and angle.
+{% if knowledge %}Background: {{ knowledge }}{% endif %}
 
-Pre-assigned distribution — follow this EXACTLY:
-{% for d in distributions %}
-  {{ d.name }}: {% for i in range(d.vals|length) %}{{ d.counts[i] }}x {{ d.vals[i] }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% for s in slots %}
+  {{ loop.index }}. {% for dim in dimensions %}{{ dim.name }}={{ s[dim.name] }}{% if not loop.last %}, {% endif %}{% endfor %}
 {% endfor %}
 
-Each plan item must include:
-- "sub_topic": a specific sub-area under the topic
-- "angle": a unique question perspective/angle that is clearly different from all other items
-{% for dim in dimensions %}
-- "{{ dim.name }}": one of [{{ dim.vals | join(", ") }}]
-{% endfor %}
+Requirements:
+- Every "angle" must be clearly distinct from all others
+- Output ALL fields: sub_topic, angle, and every dimension value AS SHOWN ABOVE
+- Do NOT change any dimension value — copy exactly
 
-IMPORTANT:
-- Ensure ALL {{ count }} angles are mutually distinct. No two items should share similar question patterns, perspectives, or structures.
-- The distribution above is the EXACT count you must produce for each dimension value. Do NOT deviate from these numbers.
-
-Output a pure JSON object only, no extra text:
+Output pure JSON, no extra text:
 {
   "items": [
     {
       "sub_topic": "sub-area name",
-      "angle": "unique perspective description",
-{% for dim in dimensions %}      "{{ dim.name }}": "{{ dim.vals[0] }}",
+      "angle": "unique perspective",
+{% for dim in dimensions %}      "{{ dim.name }}": "{{ slots[0][dim.name] }}",
 {% endfor %}    },
     ...
   ]

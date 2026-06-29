@@ -1,32 +1,22 @@
-{% if existing_angles -%}
-{{ existing_angles }}
-{% endif -%}
-user: 请为主题 "{{ topic }}" 创建 {{ count }} 个互不相同的子主题/提问角度的结构化规划。
+user: 为主题 "{{ topic }}" 的每个预分配槽位填写 sub_topic 和 angle。维度值按原样保留——只写 sub_topic 和 angle。
 {% if knowledge %}背景知识：{{ knowledge }}{% endif %}
 
-严格按以下比例分配（务必精确遵循）：
-{% for d in distributions %}
-  {{ d.name }}: {% for i in range(d.vals|length) %}{{ d.counts[i] }}×{{ d.vals[i] }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% for s in slots %}
+  {{ loop.index }}. {% for dim in dimensions %}{{ dim.name }}={{ s[dim.name] }}{% if not loop.last %}, {% endif %}{% endfor %}
 {% endfor %}
 
-每个规划项需要包含：
-- "sub_topic"：该主题下的具体子领域
-- "angle"：独特的提问视角/角度描述，必须与其他所有规划项明显不同
-{% for dim in dimensions %}
-- "{{ dim.name }}"：{{ dim.vals | join("、") }}
-{% endfor %}
+要求：
+- 每个 "angle" 必须与其他所有角度明显不同
+- 输出所有字段：sub_topic、angle 和每个维度值，按槽位原样复制
+- 不得修改任何维度值
 
-重要：
-- 确保所有 {{ count }} 个角度互不相同。任意两项不能有相似的提问模式、视角或结构。
-- 上述比例为每个维度值必须精确产出的数量，不得偏离。
-
-用纯 JSON 对象格式输出，只输出 JSON，不要有其他文字：
+输出纯 JSON，不要有其他文字：
 {
   "items": [
     {
       "sub_topic": "子领域名称",
-      "angle": "独特的视角描述",
-{% for dim in dimensions %}      "{{ dim.name }}": "{{ dim.vals[0] }}",
+      "angle": "独特的视角",
+{% for dim in dimensions %}      "{{ dim.name }}": "{{ slots[0][dim.name] }}",
 {% endfor %}    },
     ...
   ]
