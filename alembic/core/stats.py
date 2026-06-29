@@ -88,6 +88,17 @@ class StatisticsCollector(Observer):
         self._score_filter_kept = kept
         self._score_filter_dropped = dropped
 
+    def collect_scores(self, samples: list[dict]) -> None:
+        for item in samples:
+            scores = item.get("scores", {})
+            for dim, val in scores.items():
+                if dim not in self._score_distributions:
+                    self._score_distributions[dim] = []
+                self._score_distributions[dim].append(float(val))
+            ts = item.get("total_score")
+            if ts is not None:
+                self._total_scores.append(float(ts))
+
     def generate_report(self) -> dict:
         elapsed = self._end_time - self._start_time if self._end_time > 0 else 0
         report = {

@@ -68,7 +68,7 @@ class CleanerConfig:
 @dataclass
 class ScoringConfig:
     enabled: bool = False
-    model: str = "gpt-4o"
+    model: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     lang: str = "en"
@@ -164,7 +164,7 @@ class AppConfig:
 
         scoring_cfg = ScoringConfig(
             enabled=scoring_data.get("enabled", False),
-            model=scoring_data.get("model", "gpt-4o"),
+            model=scoring_data.get("model"),
             api_key=scoring_data.get("api_key"),
             base_url=scoring_data.get("base_url"),
             lang=scoring_data.get("lang", "en"),

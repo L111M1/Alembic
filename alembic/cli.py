@@ -89,17 +89,19 @@ def score(input_file: str, output: str, config: str, concurrency: int):
     if config:
         app_cfg = AppConfig.from_yaml(config)
         scoring_cfg = app_cfg.scoring
+        api_cfg = app_cfg.api
     else:
         scoring_cfg = ScoringConfig()
+        api_cfg = None
 
     if concurrency is not None:
         scoring_cfg.concurrency = concurrency
 
     api = create_client(
-        model=scoring_cfg.model,
-        api_key=scoring_cfg.api_key,
-        base_url=scoring_cfg.base_url,
-        retry=scoring_cfg.retry,
+        model=scoring_cfg.model or (api_cfg.model if api_cfg else None),
+        api_key=scoring_cfg.api_key or (api_cfg.api_key if api_cfg else None),
+        base_url=scoring_cfg.base_url or (api_cfg.base_url if api_cfg else None),
+        retry=scoring_cfg.retry or (api_cfg.retry if api_cfg else None),
     )
 
     if output is None:

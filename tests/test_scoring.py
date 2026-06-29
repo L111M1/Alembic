@@ -18,7 +18,7 @@ class TestScoringConfig:
         cfg = ScoringConfig()
         assert cfg.lang == "en"
         assert cfg.concurrency == 3
-        assert cfg.model == "gpt-4o"
+        assert cfg.model is None
         assert cfg.min_total_score == 0.0
 
     def test_default_dimensions(self):

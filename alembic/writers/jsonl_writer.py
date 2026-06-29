@@ -22,6 +22,49 @@ class BaseWriter(abc.ABC):
     def count(self) -> int: ...
 
 
+def format_sample(sample: GenerationSample, output_format: str) -> dict:
+    if sample.is_multi_turn:
+        messages = sample.messages
+        if output_format == "sharegpt":
+            conversations = []
+            for m in messages:
+                role = m.get("role", "")
+                if role == "system":
+                    conversations.append({"from": "system", "value": m.get("content", "")})
+                elif role == "user":
+                    conversations.append({"from": "human", "value": m.get("content", "")})
+                elif role == "assistant":
+                    conversations.append({"from": "gpt", "value": m.get("content", "")})
+            record = {"conversations": conversations}
+        else:
+            record = {"messages": messages}
+        if sample.metadata:
+            record["metadata"] = sample.metadata
+        return record
+
+    if output_format == "chatml":
+        messages = []
+        if sample.system:
+            messages.append({"role": "system", "content": sample.system})
+        messages.append({"role": "user", "content": sample.instruction})
+        messages.append({"role": "assistant", "content": sample.output})
+        return {"messages": messages}
+    elif output_format == "sharegpt":
+        conversations = []
+        if sample.system:
+            conversations.append({"from": "system", "value": sample.system})
+        conversations.append({"from": "human", "value": sample.instruction})
+        conversations.append({"from": "gpt", "value": sample.output})
+        return {"conversations": conversations}
+    else:
+        record = {"instruction": sample.instruction, "output": sample.output}
+        if sample.system:
+            record["system"] = sample.system
+        if sample.metadata:
+            record["metadata"] = sample.metadata
+        return record
+
+
 class JSONLWriter(BaseWriter):
     def __init__(self, config: OutputConfig):
         self._path = Path(config.path)
@@ -39,7 +82,7 @@ class JSONLWriter(BaseWriter):
             if exists:
                 self._file.write("\n")
 
-        record = self._format_sample(sample)
+        record = format_sample(sample, self._format)
         line = json.dumps(record, ensure_ascii=False)
         self._file.write(line + "\n")
         self._file.flush()
@@ -59,49 +102,29 @@ class JSONLWriter(BaseWriter):
     def count(self) -> int:
         return self._count
 
-    def _format_sample(self, sample: GenerationSample) -> dict:
-        if sample.is_multi_turn:
-            messages = sample.messages
-            if self._format == "sharegpt":
-                conversations = []
-                for m in messages:
-                    role = m.get("role", "")
-                    if role == "system":
-                        conversations.append({"from": "system", "value": m.get("content", "")})
-                    elif role == "user":
-                        conversations.append({"from": "human", "value": m.get("content", "")})
-                    elif role == "assistant":
-                        conversations.append({"from": "gpt", "value": m.get("content", "")})
-                record = {"conversations": conversations}
-            else:
-                record = {"messages": messages}
-            if sample.metadata:
-                record["metadata"] = sample.metadata
-            return record
-
-        if self._format == "chatml":
-            messages = []
-            if sample.system:
-                messages.append({"role": "system", "content": sample.system})
-            messages.append({"role": "user", "content": sample.instruction})
-            messages.append({"role": "assistant", "content": sample.output})
-            return {"messages": messages}
-        elif self._format == "sharegpt":
-            conversations = []
-            if sample.system:
-                conversations.append({"from": "system", "value": sample.system})
-            conversations.append({"from": "human", "value": sample.instruction})
-            conversations.append({"from": "gpt", "value": sample.output})
-            return {"conversations": conversations}
-        else:
-            record = {"instruction": sample.instruction, "output": sample.output}
-            if sample.system:
-                record["system"] = sample.system
-            if sample.metadata:
-                record["metadata"] = sample.metadata
-            return record
-
     def _save_checkpoint(self) -> None:
         if self._checkpoint_path:
             with open(self._checkpoint_path, "w", encoding="utf-8") as f:
                 json.dump({"count": self._count}, f)
+
+
+class MemoryWriter(BaseWriter):
+    def __init__(self, output_format: str):
+        self._format = output_format
+        self._records: list[dict] = []
+        self._count = 0
+
+    def write(self, sample: GenerationSample) -> None:
+        self._records.append(format_sample(sample, self._format))
+        self._count += 1
+
+    def close(self) -> None:
+        pass
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    @property
+    def records(self) -> list[dict]:
+        return self._records

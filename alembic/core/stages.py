@@ -2,7 +2,6 @@ import abc
 import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 from tqdm import tqdm
@@ -17,7 +16,7 @@ from alembic.quality.validators import QualityValidator, build_validator_chain
 from alembic.registry import create_client, create_strategy, stage_registry
 from alembic.scoring.scorer import DatasetScorer
 from alembic.strategies.base import GenerationStrategy
-from alembic.writers.jsonl_writer import BaseWriter, JSONLWriter
+from alembic.writers.jsonl_writer import BaseWriter, JSONLWriter, MemoryWriter
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +28,7 @@ class PipelineContext:
     collector: StatisticsCollector
     stats: GenerationStats = field(default_factory=GenerationStats)
     output_path: str = ""
-    cleaned_path: str = ""
-    scored_path: str = ""
+    samples: list[dict] = field(default_factory=list)
 
 
 class PipelineStage(abc.ABC):
@@ -44,6 +42,19 @@ def _derive_path(base: str, suffix: str) -> str:
     if base.endswith(f"_{suffix}.jsonl"):
         return base
     return base.replace(".jsonl", f"_{suffix}.jsonl")
+
+
+def _load_jsonl(path: str) -> list[dict]:
+    samples = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    samples.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return samples
 
 
 class GenerationStage(PipelineStage):
@@ -66,10 +77,13 @@ class GenerationStage(PipelineStage):
         api = self._api or self._create_api(cfg)
         strategy = self._strategy or self._create_strategy(api, cfg)
         validator = self._validator or self._create_validator(cfg)
-        writer = self._writer or self._create_writer(cfg)
         observer = self._observer or self._create_observer(ctx)
 
+        writer = MemoryWriter(cfg.output.format) if not cfg.dry_run else None
         self._run_generation_loop(cfg, ctx, strategy, validator, writer, observer, api)
+
+        if writer:
+            ctx.samples = writer.records
         ctx.output_path = cfg.output.path
 
     def _create_api(self, cfg: AppConfig) -> BaseAPIClient:
@@ -176,93 +190,60 @@ class GenerationStage(PipelineStage):
 class CleanStage(PipelineStage):
     def process(self, ctx: PipelineContext) -> None:
         cfg = ctx.config
-        if cfg.dry_run or not cfg.output.path:
-            return
-
-        output_path = cfg.output.path
-        if not Path(output_path).exists():
-            ctx.cleaned_path = output_path
+        if cfg.dry_run or not ctx.samples:
             return
 
         cleaner = DatasetCleaner(cfg.cleaner)
-        cleaned_path = _derive_path(output_path, "cleaned")
-
-        kept, dropped = cleaner.clean_file(output_path, cleaned_path)
+        cleaned = cleaner.clean_samples(ctx.samples)
+        kept, dropped = cleaner.stats
         ctx.collector.record_cleaner(kept, dropped)
-        logger.info(f"Cleaner: kept={kept}, dropped={dropped}, result={cleaned_path}")
-        ctx.cleaned_path = cleaned_path
+        logger.info(f"Cleaner: kept={kept}, dropped={dropped}")
+        ctx.samples = cleaned
 
 
 class ScoreStage(PipelineStage):
     def process(self, ctx: PipelineContext) -> None:
         cfg = ctx.config
         scfg = cfg.scoring
-        if not (scfg.enabled and scfg.dimensions) or not ctx.cleaned_path:
+        if not (scfg.enabled and scfg.dimensions) or not ctx.samples:
             return
 
-        input_path = ctx.cleaned_path
-        output_path = scfg.output_path
-        if not output_path:
-            p = Path(input_path)
-            output_path = str(p.parent / f"{p.stem}_scored.jsonl")
-
         scoring_api = create_client(
-            model=scfg.model,
-            api_key=scfg.api_key,
-            base_url=scfg.base_url,
-            retry=scfg.retry,
+            model=scfg.model or cfg.api.model,
+            api_key=scfg.api_key or cfg.api.api_key,
+            base_url=scfg.base_url or cfg.api.base_url,
+            retry=scfg.retry or cfg.api.retry,
         )
 
         scorer = DatasetScorer(scfg)
-        scored, failed = scorer.score_file(scoring_api, input_path, output_path)
+        ctx.samples = scorer.score_samples(scoring_api, ctx.samples)
+        scored, failed = scorer.stats
         ctx.collector.record_scorer(scored, failed)
-        ctx.collector.record_scores(output_path)
-        logger.info(f"Scorer: scored={scored}, failed={failed}, result={output_path}")
-        ctx.scored_path = output_path
+        ctx.collector.collect_scores(ctx.samples)
+        logger.info(f"Scorer: scored={scored}, failed={failed}")
 
 
 class ScoreFilterStage(PipelineStage):
     def process(self, ctx: PipelineContext) -> None:
         cfg = ctx.config
         min_score = cfg.scoring.min_total_score
-        if min_score <= 0 or not ctx.scored_path:
+        if min_score <= 0 or not ctx.samples:
             return
 
-        input_path = ctx.scored_path
-        output_path = input_path.replace("_scored.jsonl", "_scored_filtered.jsonl")
+        output_path = cfg.output.path
         kept = dropped = 0
 
-        with open(input_path, "r", encoding="utf-8") as fin, \
-             open(output_path, "w", encoding="utf-8") as fout:
-            for line in fin:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    sample = json.loads(line)
-                except json.JSONDecodeError:
-                    dropped += 1
-                    continue
+        with open(output_path, "w", encoding="utf-8") as fout:
+            for sample in ctx.samples:
                 total = sample.get("total_score", 0)
                 if total >= min_score:
-                    fout.write(
-                        json.dumps(
-                            {
-                                "instruction": sample.get("instruction", ""),
-                                "output": sample.get("output", ""),
-                                "metadata": sample.get("metadata", {}),
-                                "scores": sample.get("scores", {}),
-                                "total_score": total,
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
+                    fout.write(json.dumps(sample, ensure_ascii=False) + "\n")
                     kept += 1
                 else:
                     dropped += 1
 
         ctx.collector.record_score_filter(kept, dropped)
+        ctx.output_path = output_path
         logger.info(
             f"Score filter (min={min_score}): kept={kept}, dropped={dropped}, result={output_path}"
         )

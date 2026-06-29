@@ -31,16 +31,7 @@ class DatasetScorer:
             output_path = str(p.parent / f"{p.stem}_scored.jsonl")
 
         samples = self._load_samples(input_path)
-        if not samples:
-            logger.warning("No valid samples to score")
-            return 0, 0
-
-        concurrency = max(1, self._config.concurrency)
-
-        if concurrency <= 1:
-            scored = self._score_sequential(api, samples)
-        else:
-            scored = self._score_parallel(api, samples, concurrency)
+        scored = self.score_samples(api, samples)
 
         with open(output_path, "w", encoding="utf-8") as f:
             for item in scored:
@@ -48,6 +39,17 @@ class DatasetScorer:
 
         logger.info(f"Scoring done: scored={self._scored_count}, failed={self._failed_count}")
         return self._scored_count, self._failed_count
+
+    def score_samples(
+        self, api: BaseAPIClient, samples: list[dict],
+    ) -> list[dict]:
+        if not samples:
+            logger.warning("No valid samples to score")
+            return []
+        concurrency = max(1, self._config.concurrency)
+        if concurrency <= 1:
+            return self._score_sequential(api, samples)
+        return self._score_parallel(api, samples, concurrency)
 
     def _load_samples(self, input_path: str) -> list[dict]:
         samples = []

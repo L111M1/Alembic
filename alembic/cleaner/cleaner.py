@@ -27,11 +27,35 @@ class DatasetCleaner:
 
     def clean_file(self, input_path: str, output_path: str) -> tuple[int, int]:
         candidates = self._load_candidates(input_path)
+        return self._dedup_and_write(candidates, output_path)
 
+    def clean_samples(self, samples: list[dict]) -> list[dict]:
+        """Clean a list of sample dicts in memory, returning deduped results."""
+        candidates: list[dict] = []
+        for sample in samples:
+            cleaned = self._basic_clean(sample)
+            if cleaned:
+                candidates.append(cleaned)
+            else:
+                self._dropped_count += 1
         kept = self._dedup.filter(candidates)
         self._cleaned_count = len(kept)
         self._dropped_count += len(candidates) - len(kept)
+        results: list[dict] = []
+        for sample in kept:
+            raw = sample.pop("_raw", None)
+            if raw and "messages" in raw and isinstance(raw["messages"], list):
+                record = self._format_output({"_raw": raw}, sample["instruction"], sample["output"])
+            else:
+                record = sample
+            results.append(record)
+        logger.info(f"Cleaning done: kept={self._cleaned_count}, dropped={self._dropped_count}")
+        return results
 
+    def _dedup_and_write(self, candidates: list[dict], output_path: str) -> tuple[int, int]:
+        kept = self._dedup.filter(candidates)
+        self._cleaned_count = len(kept)
+        self._dropped_count += len(candidates) - len(kept)
         self._write(kept, output_path)
         logger.info(f"Cleaning done: kept={self._cleaned_count}, dropped={self._dropped_count}")
         return self._cleaned_count, self._dropped_count
