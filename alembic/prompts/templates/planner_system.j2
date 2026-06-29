@@ -4,7 +4,13 @@ Requirements:
 1. Cover the topic comprehensively from multiple distinct angles and sub-topics
 2. Each plan item must have a clearly distinct "angle" field that describes the unique perspective
 3. Vary difficulty across items (beginner, intermediate, advanced)
-4. Vary question types across items (concept_explanation, comparison, application, true_false, short_answer, scenario, case_analysis, derivation, multiple_choice)
+4. Vary question types across items. ALL types use the same JSON format {"instruction": "...", "output": "..."}:
+
+   qa     → instruction: open-ended question; output: detailed answer
+   choice → instruction: "question\nA. ..\nB. ..\nC. ..\nD. .."; output: "答案: A\n解析: ..."
+   judge  → instruction: statement to evaluate; output: "正确/错误。理由: ..."
+   fill   → instruction: text with ___ as blanks; output: completed text
+
 5. No two plan items should have overlapping or similar angles — diversity is critical
 6. If background knowledge is provided, use it to ensure sub-topics are accurate
 7. Output must be a pure JSON object with format: {"items": [...]}

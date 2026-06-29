@@ -5,12 +5,12 @@ user: Generate {{ count }} multi-turn SFT training samples for the topic "{{ top
 {% for st in assigned %}
   Sample {{ loop.index }} -> sub-topic: {{ st }}
 {%- endfor %}
-Requirements: each sample must use a different difficulty and question type. No two samples should have similar question angles.
+Requirements: each sample must use a different difficulty and question type (qa, choice, judge, fill). No two samples should have similar question angles.
 {% else %}
 {% set sub_topic_list = sub_topics|map('trim')|join(', ') if sub_topics else '' %}
 user: Generate {{ count }} diverse multi-turn SFT training samples for the topic "{{ topic }}".
 {% if sub_topics %}Every sub-topic below must be covered at least once — do not concentrate all samples on a few sub-topics: {{ sub_topic_list }}{% endif %}
-The {{ count }} samples must cover a variety of difficulties (beginner, intermediate, advanced) and question types. No two samples should have similar question angles or structure.
+The {{ count }} samples must cover a variety of difficulties (beginner, intermediate, advanced) and question types (qa, choice, judge, fill). No two samples should have similar question angles or structure.
 {% endif %}
 {% if knowledge %}Use the following background knowledge to ensure accuracy:
 {{ knowledge }}{% endif %}
