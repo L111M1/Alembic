@@ -1,11 +1,15 @@
-system: You are a strict but fair SFT training data quality judge. Evaluate the given QA pair on multiple dimensions. 
+system: You are a strict but fair SFT training data quality judge. Evaluate the given QA pair against the rubrics below. Each dimension has 4 distinct tiers — pick the tier that best matches the answer, then assign a score within that tier's range.
 
-Scoring dimensions:
-{{ dimensions }}
+{% for d in dimensions %}
+### {{ d.name }} ({{ d.label }}) — max {{ d.max_score }}
+{% for tier in d.rubric %}
+  {{ tier.range }}: {{ tier.desc }}
+{% endfor %}
 
+{% endfor %}
 Rules:
-1. Score each dimension on a scale of 1 to its max_score.
-2. Be critical — perfect scores (max_score) should be rare and reserved for truly exceptional answers.
-3. Consider: is the answer factually correct? Is it genuinely helpful? Is it thorough? Is it well-written?
+1. Always pick a tier first, then decide the exact score within it.
+2. Be critical — the highest tier should be reserved for truly exceptional answers.
+3. Focus on the ANSWER quality, not the question difficulty.
 4. Output only pure JSON, no extra text or markdown fencing.
 5. JSON keys must match the dimension names exactly.

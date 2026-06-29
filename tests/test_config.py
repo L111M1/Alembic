@@ -6,7 +6,7 @@ class TestAppConfig:
         cfg = AppConfig.from_yaml(sample_config_yaml)
         assert cfg.api.model == "qwen-plus"
         assert len(cfg.strategies) == 2
-        assert cfg.cleaner.remove_html is True
+        assert cfg.cleaner.minhash_dedup is True
         assert cfg.cleaner.minhash_dedup is True
         assert cfg.quality.output_min_len == 10
         assert cfg.scoring.enabled is False

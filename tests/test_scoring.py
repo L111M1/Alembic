@@ -175,7 +175,8 @@ class TestDatasetScorer:
         assert "fluency" in system_msg
         assert "准确" in system_msg
         assert "流畅" in system_msg
-        assert "分值范围 1-5" in system_msg
+        assert "Poor" in system_msg
+        assert "Excellent" in system_msg
 
         user_msg = captured_prompt["messages"][1]["content"]
         assert '"accuracy"' in user_msg

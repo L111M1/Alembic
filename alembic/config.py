@@ -41,9 +41,6 @@ class OutputConfig:
 
 @dataclass
 class CleanerConfig:
-    remove_html: bool = True
-    remove_urls: bool = True
-    remove_emails: bool = True
     instruction_min_len: int = 5
     instruction_max_len: int = 4000
     output_min_len: int = 10
@@ -138,9 +135,6 @@ class AppConfig:
         )
 
         cleaner_cfg = CleanerConfig(
-            remove_html=cleaner_data.get("remove_html", True),
-            remove_urls=cleaner_data.get("remove_urls", True),
-            remove_emails=cleaner_data.get("remove_emails", True),
             instruction_min_len=int(cleaner_data.get("instruction_min_len", 5)),
             instruction_max_len=int(cleaner_data.get("instruction_max_len", 4000)),
             output_min_len=int(cleaner_data.get("output_min_len", 10)),

@@ -1,45 +1,9 @@
 import hashlib
 import re
 
-_URL_PATTERN = re.compile(
-    r'https?://[^\s<>"\'{}|\\^`\[\]]+|www\.[^\s<>"\'{}|\\^`\[\]]+',
-    re.IGNORECASE,
-)
 
-_HTML_PATTERN = re.compile(r'<[^>]+>')
-
-_EMAIL_PATTERN = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
-
-_MARKDOWN_LINK_PATTERN = re.compile(r'\[([^\]]*)\]\([^)]+\)')
-_MARKDOWN_IMAGE_PATTERN = re.compile(r'!\[[^\]]*\]\([^)]+\)')
-
-
-def remove_urls(text: str) -> str:
-    return _URL_PATTERN.sub('', text)
-
-
-def remove_html(text: str) -> str:
-    return _HTML_PATTERN.sub('', text)
-
-
-def remove_emails(text: str) -> str:
-    return _EMAIL_PATTERN.sub('', text)
-
-
-def remove_markdown(text: str) -> str:
-    text = _MARKDOWN_IMAGE_PATTERN.sub('', text)
-    text = _MARKDOWN_LINK_PATTERN.sub(r'\1', text)
-    return text
-
-
-def clean_text(text: str, remove_html_tags: bool = True, remove_url_links: bool = True, remove_email_addr: bool = True) -> str:
-    if remove_html_tags:
-        text = remove_html(text)
-    if remove_url_links:
-        text = remove_urls(text)
-    if remove_email_addr:
-        text = remove_emails(text)
-    return text
+def clean_text(text: str) -> str:
+    return text.strip()
 
 
 _SPECIAL_CHARS_PATTERN = re.compile(r'[^a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\s.,!?;:\'"()\-_+=/\\@#$%^&*\[\]{}|<>`~]')

@@ -14,6 +14,16 @@ _SCORING_TEMPLATE_SYSTEM = "scorer_system.j2"
 _SCORING_TEMPLATE_USER = "scorer_user.j2"
 
 
+def _default_rubric(max_score: int) -> list[dict]:
+    step = max_score // 4
+    return [
+        {"range": f"1-{step}", "desc": "Poor — incorrect, misleading, or irrelevant"},
+        {"range": f"{step+1}-{2*step}", "desc": "Fair — mostly correct but has notable gaps"},
+        {"range": f"{2*step+1}-{3*step}", "desc": "Good — correct, useful, covers main points"},
+        {"range": f"{3*step+1}-{max_score}", "desc": "Excellent — precise, thorough, best-practice"},
+    ]
+
+
 class DatasetScorer:
     def __init__(self, config: ScoringConfig):
         self._config = config
@@ -125,15 +135,16 @@ class DatasetScorer:
             inst = sample.get("instruction", "")
             out = sample.get("output", "") or sample.get("response", "")
 
-        dimensions = self._config.dimensions
-        dim_desc = "\n".join(
-            f"- {d['name']} ({d.get('label', d['name'])}): {d.get('description', '')}. 分值范围 1-{d.get('max_score', 10)}"
-            for d in dimensions
-        )
-        dim_names = ", ".join(f'"{d["name"]}"' for d in dimensions)
+        dims = [{**d} for d in self._config.dimensions]
+        for d in dims:
+            if "label" not in d:
+                d["label"] = d["name"]
+            if "rubric" not in d:
+                d["rubric"] = _default_rubric(d.get("max_score", 10))
+        dim_names = ", ".join(f'"{d["name"]}"' for d in dims)
 
         prompt = PromptBuilder(lang=self._config.lang)
-        prompt.from_template(_SCORING_TEMPLATE_SYSTEM, dimensions=dim_desc)
+        prompt.from_template(_SCORING_TEMPLATE_SYSTEM, dimensions=dims)
         prompt.from_template(
             _SCORING_TEMPLATE_USER,
             instruction=inst,
@@ -146,7 +157,7 @@ class DatasetScorer:
         max_tok = self._config.params.get("max_tokens", 1024)
 
         raw = api.call(messages, temperature=temp, max_tokens=max_tok)
-        scores = self._parse_scores(raw, dimensions)
+        scores = self._parse_scores(raw, dims)
 
         result = dict(sample)
         result["scores"] = scores

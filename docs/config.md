@@ -47,9 +47,6 @@ quality:
   remove_truncated: true
 
 cleaner:
-  remove_html: true
-  remove_urls: true
-  remove_emails: true
   max_special_char_ratio: 0.3
   max_word_repetition_ratio: 0.5
   dedup: true
@@ -181,9 +178,6 @@ quality:
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `remove_html` | bool | true | 去除 HTML 标签 |
-| `remove_urls` | bool | true | 去除 URL |
-| `remove_emails` | bool | true | 去除邮箱 |
 | `max_special_char_ratio` | float | 0.3 | 特殊字符最大占比 |
 | `max_word_repetition_ratio` | float | 0.5 | 词汇重复最大占比 |
 | `max_char_repetition_ratio` | float | 0.5 | 字符重复最大占比 |
@@ -194,9 +188,6 @@ quality:
 
 ```yaml
 cleaner:
-  remove_html: true
-  remove_urls: true
-  remove_emails: true
   max_special_char_ratio: 0.3
   max_word_repetition_ratio: 0.5
   max_char_repetition_ratio: 0.5

@@ -130,16 +130,14 @@ class DatasetCleaner:
             }
 
     def _apply_quality(self, inst: str, out: str):
-        cfg = self._config
 
-        inst = clean_text(inst, cfg.remove_html, cfg.remove_urls, cfg.remove_emails).strip()
-        out = clean_text(out, cfg.remove_html, cfg.remove_urls, cfg.remove_emails).strip()
+        inst = clean_text(inst).strip()
+        out = clean_text(out).strip()
 
         passed = self._rules.check(inst, out)
         return passed, inst, out
 
     def _format_output(self, normalized: dict, inst: str, out: str) -> dict:
-        cfg = self._config
         raw = normalized["_raw"]
 
         if "messages" in raw and isinstance(raw["messages"], list):
@@ -149,9 +147,7 @@ class DatasetCleaner:
                 msg = dict(m)
                 content = msg.get("content")
                 if content is not None and isinstance(content, str):
-                    msg["content"] = clean_text(
-                        content, cfg.remove_html, cfg.remove_urls, cfg.remove_emails
-                    ).strip()
+                    msg["content"] = clean_text(content).strip()
                 cleaned_msgs.append(msg)
             result = {"messages": cleaned_msgs}
             if raw.get("system"):

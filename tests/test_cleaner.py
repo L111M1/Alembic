@@ -13,7 +13,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, output_max_len=8000, minhash_dedup=False)
+        cfg = CleanerConfig(output_min_len=10, output_max_len=8000, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, dropped = cleaner.clean_file(path, out)
         assert kept == 2
@@ -43,29 +43,11 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=15, minhash_dedup=False)
+        cfg = CleanerConfig(output_min_len=15, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, dropped = cleaner.clean_file(path, out)
         assert kept == 1
         assert dropped == 1
-
-    def test_clean_multi_turn_html_removal(self, temp_jsonl):
-        path = temp_jsonl([
-            json.dumps({"messages": [
-                {"role": "user", "content": "<b>What is Python?</b>"},
-                {"role": "assistant", "content": "Python is a language."},
-            ]}),
-        ])
-        out = path.replace(".jsonl", "_cleaned.jsonl")
-
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=5, minhash_dedup=False)
-        cleaner = DatasetCleaner(cfg)
-        kept, _ = cleaner.clean_file(path, out)
-        assert kept == 1
-
-        with open(out, "r", encoding="utf-8") as f:
-            cleaned = json.loads(f.readline())
-        assert "<b>" not in cleaned["messages"][0]["content"]
 
     def test_clean_mixed_single_and_multi(self, temp_jsonl):
         path = temp_jsonl([
@@ -77,7 +59,7 @@ class TestCleaner:
         ])
         out = path.replace(".jsonl", "_cleaned.jsonl")
 
-        cfg = CleanerConfig(remove_html=True, remove_urls=True, output_min_len=10, minhash_dedup=False)
+        cfg = CleanerConfig(output_min_len=10, minhash_dedup=False)
         cleaner = DatasetCleaner(cfg)
         kept, _ = cleaner.clean_file(path, out)
         assert kept == 2
