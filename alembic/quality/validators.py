@@ -51,30 +51,6 @@ class LengthValidator(QualityValidator):
         return self._rules.check(inst, out)
 
 
-class TruncationValidator(QualityValidator):
-    def __init__(self, enabled: bool = True):
-        super().__init__()
-        self._enabled = enabled
-
-    def _do_validate(self, sample: GenerationSample) -> bool:
-        if not self._enabled:
-            return True
-        if sample.is_multi_turn:
-            out_texts = [m["content"] for m in sample.messages if m.get("role") == "assistant"]
-            output = " ".join(out_texts) if out_texts else ""
-        else:
-            output = sample.output
-        output = output.strip().rstrip('"').rstrip("'").rstrip("`")
-        if len(output) < 10:
-            return False
-        if output.endswith((".", "!", "?", ")", "]", "\n")):
-            return True
-        last_block = output.split("\n")[-1].strip()
-        if len(last_block) < 5:
-            return False
-        return True
-
-
 class DedupValidator(QualityValidator):
     def __init__(self, enabled: bool = True):
         super().__init__()
@@ -97,8 +73,6 @@ class DedupValidator(QualityValidator):
 
 def build_validator_chain(config: QualityConfig) -> QualityValidator:
     length = LengthValidator(config)
-    trunc = TruncationValidator(config.remove_truncated)
     dedup = DedupValidator(config.dedup)
-    length.set_next(trunc)
-    trunc.set_next(dedup)
+    length.set_next(dedup)
     return length
