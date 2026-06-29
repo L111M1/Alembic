@@ -38,10 +38,6 @@ strategies:
     example_num: 2
     target_count: 30
 
-  - type: self_instruct
-    weight: 0.2
-    target_count: 20
-
 quality:
   instruction_min_len: 5
   instruction_max_len: 2000
@@ -106,7 +102,6 @@ api:
 |------|------|----------|
 | `topic_driven` | 按主题/领域指定生成范围，内部随机题型和难度 | `topics` + `total_count` |
 | `seed_driven` | 基于少量种子数据扩增，学习格式和风格 | `seed_file` + `example_num` + `target_count` |
-| `self_instruct` | 模型自主构思指令，无需外部数据 | `target_count` |
 
 各策略具体参数见下方。
 
@@ -155,22 +150,6 @@ api:
   seed_file: ./seeds.jsonl
   example_num: 2
   target_count: 30
-```
-
-### self_instruct
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `type` | string | 是 | `self_instruct` |
-| `weight` | float | 否 | 策略权重 |
-| `target_count` | int | 是 | 目标生成条数 |
-
-> self_instruct 固定串行执行，不受 `concurrency` 影响（每次生成依赖前一次的 seen_instructions 去重）。
-
-```yaml
-- type: self_instruct
-  weight: 0.2
-  target_count: 20
 ```
 
 ## 质量校验
@@ -348,7 +327,7 @@ output:
 | 题型/难度随机化 | 模板内置 8 × 3 = 24 组合 | 每次生成随机选题型和难度 |
 | knowledge 多样化 | `knowledge: "...请从不同角度提问"` | 引导模型变换提问角度 |
 | 语义去重 | `cleaner.embedding_dedup: true` | 生成后清洗语义相似数据 |
-| 多策略组合 | `strategies[]` 配置多种策略 | topic + seed + self_instruct 混合 |
+| 多策略组合 | `strategies[]` 配置多种策略 | topic + seed 混合 |
 
 ## 失败重试
 

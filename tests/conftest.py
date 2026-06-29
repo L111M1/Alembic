@@ -59,20 +59,21 @@ class FakeBatchAPI(BaseAPIClient):
         if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
             user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
             import re
-            match = re.search(r"Create a structured plan of (\d+)", user_msg)
-            if not match:
-                match = re.search(r"创建 (\d+) 个", user_msg)
-            count = int(match.group(1)) if match else 1
+            slot_lines = re.findall(r'^\s+\d+\.\s+\w+=', user_msg, re.MULTILINE)
+            count = len(slot_lines) if slot_lines else 1
             items = []
             for i in range(count):
                 c = FakeBatchAPI._plan_counter
                 FakeBatchAPI._plan_counter += 1
                 items.append({"sub_topic": f"sub_{c}", "angle": f"angle_{c}",
-                              "difficulty": "intermediate", "question_type": "concept_explanation"})
+                              "difficulty": "intermediate", "cognitive_level": "remember",
+                              "question_type": "qa"})
             return json.dumps(items)
         import re
         user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
         match = re.search(r"Generate (\d+) diverse", user_msg)
+        if not match:
+            match = re.search(r"Generate (\d+) SFT", user_msg)
         count = int(match.group(1)) if match else 1
         return json.dumps([
             {"instruction": f"Q{i}: test question", "output": f"A{i}: test answer"}
@@ -89,20 +90,21 @@ class FakeBatchMultiTurnAPI(BaseAPIClient):
         if "curriculum planner" in system.lower() or "content planner" in system.lower() or "规划器" in system:
             user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
             import re
-            match = re.search(r"Create a structured plan of (\d+)", user_msg)
-            if not match:
-                match = re.search(r"创建 (\d+) 个", user_msg)
-            count = int(match.group(1)) if match else 1
+            slot_lines = re.findall(r'^\s+\d+\.\s+\w+=', user_msg, re.MULTILINE)
+            count = len(slot_lines) if slot_lines else 1
             items = []
             for i in range(count):
                 c = FakeBatchAPI._plan_counter
                 FakeBatchAPI._plan_counter += 1
                 items.append({"sub_topic": f"sub_{c}", "angle": f"angle_{c}",
-                              "difficulty": "intermediate", "question_type": "concept_explanation"})
+                              "difficulty": "intermediate", "cognitive_level": "remember",
+                              "question_type": "qa"})
             return json.dumps(items)
         import re
         user_msg = next((m["content"] for m in messages if m.get("role") == "user"), "")
         match = re.search(r"Generate (\d+) diverse", user_msg)
+        if not match:
+            match = re.search(r"Generate (\d+) SFT", user_msg)
         count = int(match.group(1)) if match else 1
         return json.dumps([
             {"messages": [
@@ -211,7 +213,6 @@ def sample_config_yaml():
         "strategies": [
             {"type": "topic_driven", "weight": 0.5, "topics": [{"topic": "Python programming", "weight": 3}], "total_count": 10},
             {"type": "seed_driven", "weight": 0.3, "seed_file": "./seeds.jsonl", "example_num": 2, "target_count": 5},
-            {"type": "self_instruct", "weight": 0.2, "target_count": 5},
         ],
         "scoring": {
             "enabled": False,

@@ -54,7 +54,6 @@ python -m alembic.cli view output.jsonl -j
 |------|----------|----------|
 | `topic_driven` | 明确领域覆盖需求，按主题/难度/题型分配 | `topics` + `total_count` |
 | `seed_driven` | 有少量高质量种子数据，扩增同风格样本 | `seed_file` + `example_num` + `target_count` |
-| `self_instruct` | 自主探索多样性，无需外部数据 | `target_count` |
 
 详细参数说明见 [docs/config.md](docs/config.md#生成策略)。
 
@@ -62,7 +61,7 @@ python -m alembic.cli view output.jsonl -j
 
 ### 数据生成
 
-- 三种策略可独立或组合使用，按 `weight` 比例分配生成量
+- 两种策略可独立或组合使用，按 `weight` 比例分配生成量
 - **多角度正交生成**：可配置任意多个维度自动正交组合，Jinja2 按比例均分，代码零改动
 - 支持单轮（instruction/output）和多轮对话
 
@@ -139,44 +138,6 @@ output:
 ```
 
 环境变量：`API_KEY` / `BASE_URL`（Chat API），`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL`（语义去重嵌入 API）。
-
-## 项目结构
-
-```
-alembic/
-├── api/                   # API 适配层（OpenAI 兼容 + 重试）
-│   ├── base.py            #   BaseAPIClient, RetryConfig, RetryWrapper
-│   ├── factory.py         #   create_client() 工厂函数
-│   ├── providers.py       #   OpenAICompatibleClient
-│   └── embedding.py       #   EmbeddingClient（独立去重 API）
-├── cleaner/               # 数据清洗
-│   ├── cleaner.py         #   DatasetCleaner（文本清洗 + 去重）
-│   └── ops.py             #   低层清洗函数
-├── core/                  # 核心管线
-│   ├── pipeline.py        #   生成 → 清洗 → 评分 编排
-│   ├── observer.py        #   Observer 模式（日志 + 统计）
-│   ├── stats.py           #   StatisticsCollector
-│   ├── inspector.py       #   DatasetInspector（view 命令）
-│   └── types.py           #   数据类型定义
-├── prompts/               # 提示词系统
-│   ├── builder.py         #   PromptBuilder（Jinja2 渲染）
-│   └── templates/         #   22 个 .j2 模板（en/zh × 单轮/多轮）
-├── quality/               # 质量校验（Chain of Responsibility）
-│   └── validators.py      #   Length → Truncation → Dedup
-├── scoring/               # LLM 打分
-│   └── scorer.py          #   DatasetScorer（多维度并发打分）
-├── strategies/            # 生成策略（Strategy 模式）
-│   ├── base.py            #   GenerationStrategy 抽象基类
-│   ├── composite.py       #   策略编排 + 工厂函数
-│   ├── topic_driven.py    #   主题驱动
-│   ├── seed_driven.py     #   种子驱动
-│   └── self_instruct.py   #   自我指令
-├── writers/               # 数据输出
-│   └── jsonl_writer.py    #   JSONLWriter（alpaca/chatml/sharegpt）
-├── config.py              # 配置解析（6 个 dataclass）
-└── cli.py                 # CLI 入口（Click）
-tests/                     # pytest 测试（63 项）
-```
 
 ## 开发
 

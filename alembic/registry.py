@@ -6,7 +6,6 @@ from alembic.api.providers import OpenAICompatibleClient
 from alembic.strategies.base import GenerationStrategy
 from alembic.strategies.composite import CompositeStrategy
 from alembic.strategies.seed_driven import SeedDrivenStrategy
-from alembic.strategies.self_instruct import SelfInstructStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,6 @@ class StrategyRegistry(Registry[type[GenerationStrategy]]):
 strategy_registry = StrategyRegistry()
 strategy_registry.register("topic_driven", TopicDrivenStrategy)
 strategy_registry.register("seed_driven", SeedDrivenStrategy)
-strategy_registry.register("self_instruct", SelfInstructStrategy)
 
 
 # Backward-compatible alias.

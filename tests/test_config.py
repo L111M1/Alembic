@@ -5,7 +5,7 @@ class TestAppConfig:
     def test_from_yaml_loads_all_sections(self, sample_config_yaml):
         cfg = AppConfig.from_yaml(sample_config_yaml)
         assert cfg.api.model == "qwen-plus"
-        assert len(cfg.strategies) == 3
+        assert len(cfg.strategies) == 2
         assert cfg.cleaner.remove_html is True
         assert cfg.cleaner.minhash_dedup is True
         assert cfg.quality.output_min_len == 10

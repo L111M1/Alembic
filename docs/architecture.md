@@ -66,7 +66,6 @@ alembic/
 │   ├── base.py         # GenerationStrategy 抽象类 + 重试、并发分发
 │   ├── topic_driven.py # 两阶段：规划 → 执行，子主题分支
 │   ├── seed_driven.py  # 基于种子示例的生成（few-shot）
-│   ├── self_instruct.py# 迭代式自指导，跟踪已生成指令防重复
 │   └── composite.py    # CompositeStrategy + merge_generators
 │
 ├── cleaner/            # 生成后清洗
@@ -83,7 +82,7 @@ alembic/
 │
 ├── prompts/            # Jinja2 提示词模板
 │   ├── builder.py      # PromptBuilder — 流式模板引擎，自动语言切换（_zh）
-│   └── templates/      # 28 个 .j2 文件：planner / topic_driven / seed / self_instruct / scorer
+│   └── templates/      # 22 个 .j2 文件：planner / topic_driven / seed / scorer
 │                        #   均有 _zh（中文）和 _mt（多轮对话）变体
 │
 └── writers/            # 输出写出器
@@ -107,10 +106,6 @@ classDiagram
     class SeedDrivenStrategy {
         +iter_prompts()
     }
-    class SelfInstructStrategy {
-        +iter_prompts()
-        +_parse()
-    }
     class CompositeStrategy {
         +iter_prompts()
         +generate()
@@ -118,7 +113,6 @@ classDiagram
 
     GenerationStrategy <|-- TopicDrivenStrategy : Strategy
     GenerationStrategy <|-- SeedDrivenStrategy : Strategy
-    GenerationStrategy <|-- SelfInstructStrategy : Strategy
     GenerationStrategy <|-- CompositeStrategy : Composite
 
     class Pipeline {
@@ -239,9 +233,6 @@ strategies:
 ### SeedDrivenStrategy
 基于种子示例（few-shot）模仿其风格与深度生成样本。
 
-### SelfInstructStrategy
-迭代生成指令，将已生成指令反馈为多样性约束，避免重复。始终串行执行。
-
 ### CompositeStrategy
 加权合并多个策略，通过 `merge_generators` 交错输出。
 
@@ -317,7 +308,7 @@ python -m alembic.cli view data.jsonl --json   # JSON 格式输出
 
 ## 并发与重试
 
-- **并发**：`ThreadPoolExecutor`，并发数由 `api.concurrency` 配置。适用于 topic_driven、seed_driven。self_instruct 始终串行。
+- **并发**：`ThreadPoolExecutor`，并发数由 `api.concurrency` 配置。适用于 topic_driven、seed_driven。
 - **重试**：统一使用 `retry_with_backoff(fn, RetryConfig)`，指数退避。应用于：
   - API 层：`RetryDecorator` 包装 `BaseAPIClient`
   - 策略层：`GenerationStrategy._call_with_retry`

@@ -1,6 +1,5 @@
 from alembic.prompts.builder import load_seeds
 from alembic.strategies.seed_driven import SeedDrivenStrategy
-from alembic.strategies.self_instruct import SelfInstructStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy
 
 
@@ -144,21 +143,6 @@ class TestSeedDriven:
     def test_multi_turn_generates_messages(self, fake_multi_turn_api, seed_jsonl):
         strategy = SeedDrivenStrategy(fake_multi_turn_api, {
             "seed_file": seed_jsonl, "example_num": 1, "target_count": 1, "multi_turn": True,
-        })
-        samples = list(strategy.generate())
-        assert len(samples) == 1
-        assert samples[0].is_multi_turn
-        assert len(samples[0].messages) == 4
-
-
-class TestSelfInstruct:
-    def test_estimated_count(self, fake_api):
-        strategy = SelfInstructStrategy(fake_api, {"target_count": 5})
-        assert strategy.estimated_count() == 5
-
-    def test_multi_turn_generates_messages(self, fake_multi_turn_api):
-        strategy = SelfInstructStrategy(fake_multi_turn_api, {
-            "target_count": 1, "multi_turn": True,
         })
         samples = list(strategy.generate())
         assert len(samples) == 1
