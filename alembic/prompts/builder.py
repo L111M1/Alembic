@@ -40,10 +40,13 @@ class PromptBuilder:
         self._messages.append({"role": "assistant", "content": text})
         return self
 
-    def from_template(self, template_name: str, **variables) -> PromptBuilder:
+    def render_template(self, template_name: str, **variables) -> str:
         name = self._resolve_template(template_name)
         tmpl = self._env.get_template(name)
-        rendered = tmpl.render(**variables)
+        return tmpl.render(**variables)
+
+    def from_template(self, template_name: str, **variables) -> PromptBuilder:
+        rendered = self.render_template(template_name, **variables)
         parsed = self._parse_chat_messages(rendered)
         self._messages.extend(parsed)
         return self

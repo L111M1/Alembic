@@ -1,4 +1,5 @@
-from alembic.strategies.composite import CompositeStrategy, create_strategy
+from alembic.registry import create_strategy
+from alembic.strategies.composite import CompositeStrategy
 
 
 class TestComposite:

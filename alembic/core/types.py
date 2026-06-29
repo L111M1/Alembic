@@ -29,11 +29,3 @@ class GenerationStats:
     total_filtered: int = 0
     by_strategy: dict = field(default_factory=dict)
     errors: list = field(default_factory=list)
-
-
-@dataclass
-class PipelineConfig:
-    strategies: list = field(default_factory=list)
-    api: dict = field(default_factory=dict)
-    quality: dict = field(default_factory=dict)
-    output: dict = field(default_factory=dict)

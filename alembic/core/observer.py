@@ -12,9 +12,6 @@ class Observer(abc.ABC):
     def on_sample(self, index: int, success: bool, strategy: str) -> None: ...
 
     @abc.abstractmethod
-    def on_error(self, index: int, strategy: str, error: str) -> None: ...
-
-    @abc.abstractmethod
     def on_complete(self, stats) -> None: ...
 
 
@@ -32,9 +29,6 @@ class LogObserver(Observer):
             elapsed = time.time() - self._start_time
             rate = index / elapsed if elapsed > 0 else 0
             self._log.info(f"[{index}] generated | {rate:.1f} samples/s")
-
-    def on_error(self, index: int, strategy: str, error: str) -> None:
-        self._log.warning(f"[{index}] {strategy} error: {error[:120]}")
 
     def on_complete(self, stats) -> None:
         elapsed = time.time() - self._start_time
@@ -61,10 +55,6 @@ class CompositeObserver(Observer):
     def on_sample(self, index: int, success: bool, strategy: str) -> None:
         for ob in self._observers:
             ob.on_sample(index, success, strategy)
-
-    def on_error(self, index: int, strategy: str, error: str) -> None:
-        for ob in self._observers:
-            ob.on_error(index, strategy, error)
 
     def on_complete(self, stats) -> None:
         for ob in self._observers:

@@ -3,19 +3,21 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from tqdm import tqdm
 
-from alembic.api.factory import create_client
+from alembic.api.base import BaseAPIClient
 from alembic.cleaner.cleaner import DatasetCleaner
 from alembic.config import AppConfig
-from alembic.core.observer import CompositeObserver, LogObserver
+from alembic.core.observer import CompositeObserver, LogObserver, Observer
 from alembic.core.stats import StatisticsCollector
 from alembic.core.types import GenerationStats
-from alembic.quality.validators import build_validator_chain
+from alembic.quality.validators import QualityValidator, build_validator_chain
+from alembic.registry import create_client, create_strategy, stage_registry
 from alembic.scoring.scorer import DatasetScorer
-from alembic.strategies.composite import create_strategy
-from alembic.writers.jsonl_writer import JSONLWriter
+from alembic.strategies.base import GenerationStrategy
+from alembic.writers.jsonl_writer import BaseWriter, JSONLWriter
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +47,40 @@ def _derive_path(base: str, suffix: str) -> str:
 
 
 class GenerationStage(PipelineStage):
+    def __init__(
+        self,
+        api: Optional[BaseAPIClient] = None,
+        strategy: Optional[GenerationStrategy] = None,
+        validator: Optional[QualityValidator] = None,
+        writer: Optional[BaseWriter] = None,
+        observer: Optional[Observer] = None,
+    ):
+        self._api = api
+        self._strategy = strategy
+        self._validator = validator
+        self._writer = writer
+        self._observer = observer
+
     def process(self, ctx: PipelineContext) -> None:
         cfg = ctx.config
-        api = create_client(
+        api = self._api or self._create_api(cfg)
+        strategy = self._strategy or self._create_strategy(api, cfg)
+        validator = self._validator or self._create_validator(cfg)
+        writer = self._writer or self._create_writer(cfg)
+        observer = self._observer or self._create_observer(ctx)
+
+        self._run_generation_loop(cfg, ctx, strategy, validator, writer, observer, api)
+        ctx.output_path = cfg.output.path
+
+    def _create_api(self, cfg: AppConfig) -> BaseAPIClient:
+        return create_client(
             model=cfg.api.model,
             api_key=cfg.api.api_key,
             base_url=cfg.api.base_url,
             retry=cfg.api.retry,
         )
 
+    def _create_strategy(self, api: BaseAPIClient, cfg: AppConfig) -> GenerationStrategy:
         strategy_cfgs = []
         for s in cfg.strategies:
             d = {
@@ -65,12 +92,27 @@ class GenerationStage(PipelineStage):
             }
             d.update(s.params)
             strategy_cfgs.append(d)
-        strategy = create_strategy(api, strategy_cfgs)
+        return create_strategy(api, strategy_cfgs)
 
-        validator = build_validator_chain(cfg.quality)
-        writer = None if cfg.dry_run else JSONLWriter(cfg.output)
-        observer = CompositeObserver(LogObserver(logger), ctx.collector)
+    def _create_validator(self, cfg: AppConfig) -> Optional[QualityValidator]:
+        return build_validator_chain(cfg.quality)
 
+    def _create_writer(self, cfg: AppConfig) -> Optional[BaseWriter]:
+        return None if cfg.dry_run else JSONLWriter(cfg.output)
+
+    def _create_observer(self, ctx: PipelineContext) -> Observer:
+        return CompositeObserver(LogObserver(logger), ctx.collector)
+
+    def _run_generation_loop(
+        self,
+        cfg: AppConfig,
+        ctx: PipelineContext,
+        strategy: GenerationStrategy,
+        validator: Optional[QualityValidator],
+        writer: Optional[BaseWriter],
+        observer: Observer,
+        api: BaseAPIClient,
+    ) -> None:
         stats = ctx.stats
         max_count = cfg.count if cfg.count > 0 else strategy.estimated_count()
         observer.on_start(max_count)
@@ -93,7 +135,7 @@ class GenerationStage(PipelineStage):
                 )
                 observer.on_sample(idx, True, strategy_name)
 
-                if validator.validate(sample):
+                if not validator or validator.validate(sample):
                     stats.total_generated += 1
                     stats.by_strategy[strategy_name] = (
                         stats.by_strategy.get(strategy_name, 0) + 1
@@ -127,8 +169,6 @@ class GenerationStage(PipelineStage):
             if writer:
                 writer.close()
             observer.on_complete(stats)
-
-        ctx.output_path = cfg.output.path
 
 
 class CleanStage(PipelineStage):
@@ -224,3 +264,10 @@ class ScoreFilterStage(PipelineStage):
         logger.info(
             f"Score filter (min={min_score}): kept={kept}, dropped={dropped}, result={output_path}"
         )
+
+
+# Register the built-in pipeline stages.
+stage_registry.register("generate", GenerationStage)
+stage_registry.register("clean", CleanStage)
+stage_registry.register("score", ScoreStage)
+stage_registry.register("score_filter", ScoreFilterStage)

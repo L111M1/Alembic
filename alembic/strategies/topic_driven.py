@@ -3,7 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Iterator, Optional
 
-from alembic.api.base import BaseAPIClient
+from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
 from alembic.core.types import GenerationSample
 from alembic.prompts.builder import PromptBuilder
 from alembic.strategies.base import GenerationStrategy
@@ -148,14 +148,11 @@ class TopicDrivenStrategy(GenerationStrategy):
                 )
                 messages = builder.build()
 
-                plan_header = (
-                    f"\n\n--- PLAN ---\n"
-                    f"Sub-topics: {sub_topic_list}\n\n"
-                    f"MUST generate exactly {len(chunk)} samples following these specifications "
-                    f"(one per item, same order):\n"
-                    f"{plan_lines}\n\n"
-                    f"CRITICAL: Every sample must differ substantially in instruction, output, and structure. No two samples may resemble each other."
-                    f"\n--- END PLAN ---"
+                plan_header = builder.render_template(
+                    "plan_header.j2",
+                    sub_topic_list=sub_topic_list,
+                    count=len(chunk),
+                    plan_lines=plan_lines,
                 )
                 if messages and messages[-1]["role"] == "user":
                     messages[-1]["content"] += plan_header
@@ -337,13 +334,24 @@ class TopicDrivenStrategy(GenerationStrategy):
         self, topic: str, count: int, knowledge: str, existing_angles: list[str],
     ) -> list[dict[str, Any]]:
         max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            items = self._plan_topic(topic, count, knowledge, existing_angles)
+        for attempt in range(max_retries):
+            try:
+                items = retry_with_backoff(
+                    lambda: self._plan_topic(topic, count, knowledge, existing_angles),
+                    RetryConfig(max_retries=1),
+                    f"Plan topic '{topic}'",
+                )
+            except RuntimeError as e:
+                if attempt == max_retries - 1:
+                    logger.warning(f"Planning topic '{topic}' failed after {max_retries} attempts: {e}")
+                    return []
+                logger.warning(f"Planning topic '{topic}' error (attempt {attempt + 1}/{max_retries}): {e}")
+                continue
             if items:
                 return items
-            if attempt < max_retries:
+            if attempt < max_retries - 1:
                 logger.warning(
-                    f"Planning topic '{topic}' got empty result, retry {attempt + 1}/{max_retries}"
+                    f"Planning topic '{topic}' got empty result, retry {attempt + 2}/{max_retries}"
                 )
         logger.warning(f"Planning topic '{topic}' failed after {max_retries} attempts")
         return []

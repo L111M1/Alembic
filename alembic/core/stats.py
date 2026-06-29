@@ -37,9 +37,6 @@ class StatisticsCollector(Observer):
     def on_sample(self, index: int, success: bool, strategy: str) -> None:
         pass
 
-    def on_error(self, index: int, strategy: str, error: str) -> None:
-        pass
-
     def on_complete(self, stats) -> None:
         self._end_time = time.time()
         self._generated = stats.total_generated

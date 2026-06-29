@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
-from alembic.api.base import BaseAPIClient
+from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
 from alembic.config import ScoringConfig
 from alembic.prompts.builder import PromptBuilder
 
@@ -106,9 +106,13 @@ class DatasetScorer:
 
     def _score_one_safe(self, api: BaseAPIClient, sample: dict, index: int) -> Optional[dict]:
         try:
-            return self._score_one(api, sample, index)
-        except Exception as e:
-            logger.warning(f"Score sample {index} error: {e}")
+            return retry_with_backoff(
+                lambda: self._score_one(api, sample, index),
+                RetryConfig(max_retries=2),
+                f"Score sample {index}",
+            )
+        except RuntimeError as e:
+            logger.warning(str(e))
             return None
 
     def _score_one(self, api: BaseAPIClient, sample: dict, index: int) -> Optional[dict]:

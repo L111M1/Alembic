@@ -4,12 +4,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Optional
 
-from alembic.api.base import BaseAPIClient
+from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
 from alembic.core.types import GenerationSample
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 4  # 1 initial + 3 retries
+_MAX_RETRIES = 3
 
 
 class GenerationStrategy(abc.ABC):
@@ -82,21 +82,15 @@ class GenerationStrategy(abc.ABC):
     def _call_with_retry(
         self, messages: list[dict], metadata: dict, prompt_id: str
     ) -> Optional[list[GenerationSample]]:
-        """Single retry entry point shared by the sequential and parallel generators."""
-        for attempt in range(1, _MAX_RETRIES + 1):
-            if attempt > 1:
-                logger.info(f"[{self._name}] retry {attempt}/{_MAX_RETRIES} for {prompt_id}")
-            try:
-                return self._call_and_parse(messages, metadata)
-            except Exception as e:
-                if attempt == _MAX_RETRIES:
-                    logger.warning(
-                        f"[{self._name}] failed for {prompt_id} after {_MAX_RETRIES} attempts: {e}"
-                    )
-                    return None
-                logger.warning(
-                    f"[{self._name}] {type(e).__name__} for {prompt_id} (attempt {attempt}): {e}"
-                )
+        try:
+            return retry_with_backoff(
+                lambda: self._call_and_parse(messages, metadata),
+                RetryConfig(max_retries=_MAX_RETRIES),
+                f"Generate {prompt_id}",
+            )
+        except RuntimeError as e:
+            logger.warning(str(e))
+            return None
 
     @abc.abstractmethod
     def estimated_count(self) -> int: ...
