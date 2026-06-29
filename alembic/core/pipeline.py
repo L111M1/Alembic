@@ -9,7 +9,6 @@ from alembic.registry import stage_registry
 
 logger = logging.getLogger(__name__)
 
-
 class Pipeline:
     """Facade orchestrating a chain of :class:`PipelineStage` instances.
 
@@ -34,7 +33,7 @@ class Pipeline:
     def _build_stages(self) -> list[PipelineStage]:
         return [stage_registry.create(name) for name in self._stage_names]
 
-    def run(self) -> GenerationStats:
+    def run(self, profile: bool = False) -> GenerationStats:
         if self._config.random_seed is not None:
             random.seed(self._config.random_seed)
 

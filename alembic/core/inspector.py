@@ -4,7 +4,70 @@ from pathlib import Path
 
 import numpy as np
 
-from alembic.cleaner.ops import minhash_signature, tokenize_ngrams
+from alembic.cleaner.ops import (
+    char_repetition_ratio,
+    minhash_signature,
+    tokenize_ngrams,
+    word_repetition_ratio,
+)
+
+
+def _section(label: str, width: int = 68) -> str:
+    mid = f" {label} "
+    left = (width - len(mid)) // 2
+    return "-" * left + mid + "-" * (width - left - len(mid))
+
+
+def _hist_bins(values: list[float], n_bins: int = 10) -> list[tuple[str, int]]:
+    if not values:
+        return []
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return [(f"{lo:.1f}", len(values))]
+    distinct = len(set(round(v, 6) for v in values))
+    n_bins = min(n_bins, distinct)
+    n_bins = max(2, int(hi - lo) + 1) if hi - lo < n_bins else n_bins
+    bins = [lo + (hi - lo) * i / n_bins for i in range(n_bins + 1)]
+    counts = [0] * n_bins
+    for v in values:
+        for i in range(n_bins - 1, -1, -1):
+            if v >= bins[i]:
+                counts[i] += 1
+                break
+    result = []
+    fmt = ".2f" if hi - lo < 2 else ".0f"
+    for i in range(n_bins):
+        label = f"{bins[i]:{fmt}}-{bins[i+1]:{fmt}}"
+        result.append((label, counts[i]))
+    return [r for r in result if r[1] > 0]
+
+
+def _render_chart(
+    items: list[tuple[str, int | float]],
+    width: int = 50,
+    title: str = "",
+    max_label_width: int = 20,
+    unit: str = "",
+) -> str:
+    if not items:
+        return ""
+
+    vals = [v for _, v in items]
+    max_val = max(vals) if vals else 1
+    if max_val == 0:
+        return ""
+
+    label_w = min(max(len(lb) for lb, _ in items), max_label_width)
+    lines = []
+    if title:
+        lines.append(f"  {title}")
+        lines.append("  " + "-" * (label_w + width + 12 + len(unit)))
+    for label, val in items:
+        label = label[:label_w].rjust(label_w)
+        bar_len = max(1, int(val / (max_val + 1e-9) * width))
+        bar = "|" + "#" * bar_len + " " * (width - bar_len) + "|"
+        lines.append(f"  {label} {bar} {val}{unit}")
+    return "\n".join(lines)
 
 
 def _compute_distribution(values: list[float]) -> dict:
@@ -46,6 +109,14 @@ class DatasetInspector:
         self._score_dims: dict[str, list[float]] = {}
         self._score_dim_names: list[str] = []
         self._sample_texts: list[str] = []
+        self._max_sims: list[float] = []
+        self._sim_threshold: float = 0.7
+        self._similar_pairs: list[tuple[int, int, float]] = []
+        self._word_rep_ratios: list[float] = []
+        self._char_rep_ratios: list[float] = []
+        self._empty_inst: int = 0
+        self._empty_out: int = 0
+        self._parse_errors: int = 0
 
     def inspect_file(self, path: str) -> dict:
         with open(path, "r", encoding="utf-8") as f:
@@ -56,6 +127,7 @@ class DatasetInspector:
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError:
+                    self._parse_errors += 1
                     continue
                 self._process(item)
 
@@ -101,6 +173,14 @@ class DatasetInspector:
             self._sample_texts.append(" ".join(m.get("content", "") for m in item.get("messages", [])))
         else:
             self._sample_texts.append(inst + " " + out)
+
+        text = self._sample_texts[-1]
+        self._word_rep_ratios.append(word_repetition_ratio(text))
+        self._char_rep_ratios.append(char_repetition_ratio(text))
+        if not inst.strip():
+            self._empty_inst += 1
+        if not out.strip():
+            self._empty_out += 1
 
         meta = item.get("metadata", {})
         if isinstance(meta, dict):
@@ -150,30 +230,159 @@ class DatasetInspector:
 
     def analyze_similarity(self, threshold: float = 0.7) -> dict:
         """Compute MinHash pairwise similarity distribution."""
+        self._sim_threshold = threshold
         texts = self._sample_texts
         n = len(texts)
         if n < 2:
+            self._max_sims = []
             return {"count": n, "near_duplicates": 0, "threshold": threshold}
 
         num_perm = 128
         signatures = [minhash_signature(tokenize_ngrams(t), num_perm) for t in texts]
         sign_arr = np.array(signatures, dtype=np.uint64)
 
-        max_sims: list[float] = []
+        self._max_sims = []
+        self._similar_pairs = []
         for i in range(n):
             matches = np.sum(sign_arr[i] == sign_arr[i + 1:], axis=1)
             sims = matches.astype(np.float64) / num_perm
+            for j_offset, sim in enumerate(sims):
+                s = float(sim)
+                self._similar_pairs.append((i, i + 1 + j_offset, s))
             if len(sims) > 0:
-                max_sims.append(float(np.max(sims)))
+                self._max_sims.append(float(np.max(sims)))
 
-        near = sum(1 for s in max_sims if s >= threshold)
+        self._similar_pairs.sort(key=lambda x: -x[2])
+
+        near = sum(1 for s in self._max_sims if s >= threshold)
         return {
             "count": n,
             "near_duplicates": near,
             "duplicate_ratio": round(near / max(n, 1), 3),
             "threshold": threshold,
-            "max_similarity_distribution": _compute_distribution(max_sims) if max_sims else {"count": 0},
+            "max_similarity_distribution": _compute_distribution(self._max_sims) if self._max_sims else {"count": 0},
         }
+
+    def print_charts(self, quality: bool = False) -> str:
+        W = 40
+        S = "=" * 68
+
+        out: list[str] = []
+        out.append(S)
+        out.append("  DATA PROFILE")
+        out.append(f"  {self._total} samples  |  "
+                   f"{self._single_turn} single-turn  |  "
+                   f"{self._multi_turn} multi-turn")
+
+        if self._total > 0 and self._multi_turn > 0:
+            out.append("")
+            out.append(_section("COMPOSITION"))
+            out.append(_render_chart(
+                [("1-turn", self._single_turn), ("multi", self._multi_turn)],
+                width=W, title="Format",
+            ))
+
+        if self._strategies and len(self._strategies) > 1:
+            out.append("")
+            out.append(_section("STRATEGIES"))
+            items = [(s[:14], c) for s, c in self._strategies.most_common()]
+            out.append(_render_chart(items, width=W, title="Generation Strategy"))
+
+        if self._topics and len(self._topics) > 1:
+            out.append("")
+            out.append(_section("TOPICS"))
+            items = [(t[:14], c) for t, c in self._topics.most_common(15)]
+            out.append(_render_chart(items, width=W, title="Topic Coverage"))
+
+        if self._inst_lengths or self._out_lengths:
+            out.append("")
+            out.append(_section("LENGTH"))
+        if self._inst_lengths:
+            inst = self._inst_lengths
+            out.append(f"  instruction  |  "
+                       f"min={min(inst)} max={max(inst)} "
+                       f"mean={sum(inst)//len(inst):.0f} "
+                       f"p50={sorted(inst)[len(inst)//2]}")
+            out.append(_render_chart(
+                _hist_bins([float(x) for x in inst], n_bins=8),
+                width=W, title="Instruction Histogram",
+            ))
+        if self._out_lengths:
+            outl = self._out_lengths
+            out.append(f"  output        |  "
+                       f"min={min(outl)} max={max(outl)} "
+                       f"mean={sum(outl)//len(outl):.0f} "
+                       f"p50={sorted(outl)[len(outl)//2]}")
+            out.append(_render_chart(
+                _hist_bins([float(x) for x in outl], n_bins=8),
+                width=W, title="Output Histogram",
+            ))
+
+        if self._score_dims:
+            out.append("")
+            out.append(_section("SCORES"))
+            for dim, vals in self._score_dims.items():
+                out.append(f"  {dim:14}  |  "
+                           f"min={min(vals):.0f} max={max(vals):.0f} "
+                           f"mean={sum(vals)/len(vals):.1f} "
+                           f"p50={sorted(vals)[len(vals)//2]:.0f}")
+                out.append(_render_chart(
+                    _hist_bins(vals, n_bins=8),
+                    width=W, title=f"Score Histogram [{dim}]",
+                ))
+
+        if quality:
+            out.append("")
+            out.append(_section("QUALITY"))
+            issues: list[str] = []
+            if self._parse_errors:
+                issues.append(f"{self._parse_errors} parse errors")
+            if self._empty_inst:
+                issues.append(f"{self._empty_inst} empty instructions")
+            if self._empty_out:
+                issues.append(f"{self._empty_out} empty outputs")
+            out.append(f"  issues:  {', '.join(issues) if issues else 'none'}")
+            if self._word_rep_ratios:
+                w = self._word_rep_ratios
+                out.append(f"  word rept  |  "
+                           f"max={max(w):.2f} mean={sum(w)/len(w):.3f} "
+                           f">0.1: {sum(1 for r in w if r > 0.1)}")
+                out.append(_render_chart(
+                    _hist_bins(w, n_bins=6),
+                    width=W, title="Word Repetition",
+                ))
+            if self._char_rep_ratios:
+                c = self._char_rep_ratios
+                out.append(f"  char rept  |  "
+                           f"max={max(c):.3f} mean={sum(c)/len(c):.4f} "
+                           f">0.02: {sum(1 for r in c if r > 0.02)}")
+                out.append(_render_chart(
+                    _hist_bins(c, n_bins=6),
+                    width=W, title="Char Repetition",
+                ))
+
+            out.append("")
+            out.append(_section("SIMILARITY (MinHash)"))
+            if self._max_sims:
+                near = sum(1 for s in self._max_sims if s >= self._sim_threshold)
+                out.append(f"  threshold {self._sim_threshold:.0%}  |  "
+                           f"{near}/{len(self._max_sims)} near-duplicates "
+                           f"({near / max(len(self._max_sims), 1):.1%})")
+                out.append(_render_chart(
+                    _hist_bins(self._max_sims, n_bins=8),
+                    width=W, title="Max Pairwise Similarity",
+                ))
+                if self._similar_pairs:
+                    top = self._similar_pairs[:8]
+                    items = [(f"#{i}-#{j}", round(s, 3)) for i, j, s in top]
+                    out.append(_render_chart(
+                        items, width=W, title="Top Similar Pairs",
+                    ))
+            else:
+                out.append("  (need >= 2 samples)")
+
+        out.append(S)
+        return "\n".join(out)
 
     def print_report(self, path: str, quality: bool = False) -> str:
         report = self.inspect_file(path)
@@ -227,6 +436,8 @@ class DatasetInspector:
 
     def print_samples(self, path: str, n: int = 3) -> str:
         lines = []
+        lines.append("")
+        lines.append(_section("SAMPLES"))
         count = 0
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
@@ -240,7 +451,7 @@ class DatasetInspector:
                 except json.JSONDecodeError:
                     continue
                 count += 1
-                lines.append(f"\n  --- Sample {count} ---")
+                lines.append(f"\n  [Sample {count}]")
                 if "messages" in item:
                     for m in item["messages"]:
                         role = m.get("role", "?")

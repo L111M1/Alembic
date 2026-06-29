@@ -116,10 +116,11 @@ def score(input_file: str, output: str, config: str, concurrency: int):
 
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
-@click.option("--samples", "-n", type=int, default=3, help="Number of sample rows to display")
+@click.option("--samples", "-n", type=int, default=0, help="Number of sample rows to display")
 @click.option("--json", "-j", "as_json", is_flag=True, help="Output report as JSON")
 @click.option("--quality", "-q", is_flag=True, help="Include MinHash similarity analysis")
-def view(input_file: str, samples: int, as_json: bool, quality: bool):
+@click.option("--graph", "-g", is_flag=True, help="Render Unicode bar charts (topic, length, score distributions)")
+def view(input_file: str, samples: int, as_json: bool, quality: bool, graph: bool):
     """View a JSONL dataset: statistics, distribution, and sample rows"""
     inspector = DatasetInspector()
     if as_json:
@@ -129,7 +130,13 @@ def view(input_file: str, samples: int, as_json: bool, quality: bool):
             report["similarity"] = inspector.analyze_similarity()
         print(json_mod.dumps(report, ensure_ascii=False, indent=2))
     else:
-        out = inspector.print_report(input_file, quality=quality)
+        if graph:
+            inspector.inspect_file(input_file)
+            if quality:
+                inspector.analyze_similarity()
+            out = inspector.print_charts(quality=quality)
+        else:
+            out = inspector.print_report(input_file, quality=quality)
         print(out)
         if samples > 0:
             out2 = inspector.print_samples(input_file, n=samples)
