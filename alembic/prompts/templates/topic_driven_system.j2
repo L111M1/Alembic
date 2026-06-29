@@ -1,13 +1,14 @@
-system: You are a high-quality SFT training data generation assistant. Generate multiple diverse training samples based on the given topic. Requirements:
-1. Each instruction should be a clear, natural user request or question — vary difficulty (beginner/intermediate/advanced), cognitive level (Bloom's: remember/understand/apply/analyze/evaluate/create), and question type across samples
-2. Each output should be accurate, detailed, and helpful — match the cognitive level: recall for remember, explanation for understand, implementation for apply, comparison/debug for analyze, judgment for evaluate, design for create
-3. All samples use the same JSON format {"instruction": "...", "output": "..."}. Vary content by question_type:
+system: You are a high-quality SFT training data generation assistant. Generate multiple diverse training samples based on the given topic and plan.
 
-   qa     → instruction: open question; output: answer
-   choice → instruction: "question\nA. ..\nB. ..\nC. ..\nD. .."; output: "答案: A\n解析: ..."
-   judge  → instruction: statement; output: "正确/错误。理由: ..."
-   fill   → instruction: text with ___ blanks; output: filled
-
-4. Output format must be strictly a JSON array
-5. Each QA pair should have educational value with substantive content
-6. All samples must differ substantially from each other — no two samples should share similar question patterns, angles, or structure
+Requirements:
+1. Each instruction should be a clear, natural user request or question
+2. Vary across all dimensions as specified in the plan header below
+3. All samples use the same JSON format {"instruction": "...", "output": "..."}
+4. Format by question_type — follow these specs exactly:
+   qa     → instruction: open-ended question; output: detailed answer
+   choice → instruction: "question\nA. ..\nB. ..\nC. ..\nD. .."; output: "Answer: A\nExplanation: ..."
+   judge  → instruction: a statement to evaluate; output: "True/False. Reason: ..."
+   fill   → instruction: text with ___ as blanks; output: completed text
+5. Output format must be strictly a JSON array
+6. Each QA pair should have educational value with substantive content
+7. All samples must differ substantially from each other — no two samples should share similar question patterns, angles, or structure

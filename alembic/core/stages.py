@@ -91,6 +91,8 @@ class GenerationStage(PipelineStage):
                 "multi_turn": cfg.output.multi_turn,
             }
             d.update(s.params)
+            if cfg.count > 0:
+                d["total_count"] = min(cfg.count, d.get("total_count", cfg.count))
             strategy_cfgs.append(d)
         return create_strategy(api, strategy_cfgs)
 

@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class TopicDrivenStrategy(GenerationStrategy):
+    _DEFAULT_DIMENSIONS = [
+        {"name": "difficulty", "vals": ["beginner", "intermediate", "advanced"]},
+        {"name": "cognitive_level", "vals": ["remember", "understand", "apply", "analyze", "evaluate", "create"]},
+        {"name": "question_type", "vals": ["qa", "choice", "judge", "fill"]},
+    ]
+
     def __init__(self, api: BaseAPIClient, params: dict):
         super().__init__(api, params)
         self._topics_raw = params.get("topics", [])
@@ -21,9 +27,11 @@ class TopicDrivenStrategy(GenerationStrategy):
         self._max_samples_per_request = int(params.get("max_samples_per_request", 10))
         self._execution_max_per_request = int(params.get("execution_max_per_request", 2))
         self._two_stage = bool(params.get("two_stage", True))
+        self._dimensions = params.get("dimensions", self._DEFAULT_DIMENSIONS)
+        self._dim_names = [d["name"] for d in self._dimensions]
         self._plan: list[dict[str, Any]] = self._build_plan()
-        self._plan_items: Optional[list[dict[str, Any]]] = None  # cached stage-1 output
-        self._plan_lookup: dict[str, list[dict[str, Any]]] = {}  # prompt_id -> batch plan items
+        self._plan_items: Optional[list[dict[str, Any]]] = None
+        self._plan_lookup: dict[str, list[dict[str, Any]]] = {}
 
     def _build_plan(self) -> list[dict[str, Any]]:
         if not self._topics_raw:
@@ -165,12 +173,10 @@ class TopicDrivenStrategy(GenerationStrategy):
     def _format_plan_batch(self, batch: list[dict[str, Any]]) -> str:
         lines = []
         for i, item in enumerate(batch):
-            lines.append(
-                f"  {i + 1}. sub_topic={item.get('sub_topic', '')} | "
-                f"angle={item.get('angle', '')} | "
-                f"difficulty={item.get('difficulty', 'intermediate')} | "
-                f"question_type={item.get('question_type', 'concept_explanation')}"
-            )
+            parts = [f"sub_topic={item.get('sub_topic', '')}", f"angle={item.get('angle', '')}"]
+            for dim_name in self._dim_names:
+                parts.append(f"{dim_name}={item.get(dim_name, '')}")
+            lines.append(f"  {i + 1}. {' | '.join(parts)}")
         return "\n".join(lines)
 
     # ── stage 1: planning ──────────────────────────────────────────────
@@ -306,6 +312,15 @@ class TopicDrivenStrategy(GenerationStrategy):
     def _plan_topic(
         self, topic: str, count: int, knowledge: str, existing_angles: list[str],
     ) -> list[dict[str, Any]]:
+        distributions = []
+        for dim in self._dimensions:
+            vals = dim["vals"]
+            n = len(vals)
+            base = count // n
+            rem = count % n
+            counts = [(base + 1) if i < rem else base for i in range(n)]
+            distributions.append({"name": dim["name"], "vals": vals, "counts": counts})
+
         builder = PromptBuilder(lang=self._lang)
         builder.from_template("planner_system.j2")
 
@@ -321,6 +336,8 @@ class TopicDrivenStrategy(GenerationStrategy):
             count=count,
             knowledge=knowledge,
             existing_angles=angle_hint,
+            dimensions=self._dimensions,
+            distributions=distributions,
         )
         messages = builder.build()
         raw = self._call_api(messages, use_json_mode=True)
@@ -382,13 +399,15 @@ class TopicDrivenStrategy(GenerationStrategy):
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            result.append({
+            item: dict[str, Any] = {
                 "sub_topic": str(entry.get("sub_topic", "")).strip(),
                 "angle": str(entry.get("angle", "")).strip(),
-                "difficulty": str(entry.get("difficulty", "intermediate")).strip(),
-                "cognitive_level": str(entry.get("cognitive_level", "remember")).strip(),
-                "question_type": str(entry.get("question_type", "concept_explanation")).strip(),
-            })
+            }
+            for dim_name in self._dim_names:
+                vals = next((d["vals"] for d in self._dimensions if d["name"] == dim_name), [])
+                default = vals[0] if vals else ""
+                item[dim_name] = str(entry.get(dim_name, default)).strip()
+            result.append(item)
         return result
 
     @staticmethod
@@ -406,13 +425,7 @@ class TopicDrivenStrategy(GenerationStrategy):
         batch = self._plan_lookup.get(prompt_id)
         if batch:
             meta["_plan_items"] = [
-                {
-                    "sub_topic": item.get("sub_topic", ""),
-                    "angle": item.get("angle", ""),
-                    "difficulty": item.get("difficulty", ""),
-                    "cognitive_level": item.get("cognitive_level", ""),
-                    "question_type": item.get("question_type", ""),
-                }
+                {key: item.get(key, "") for key in ["sub_topic", "angle"] + self._dim_names}
                 for item in batch
             ]
         return meta

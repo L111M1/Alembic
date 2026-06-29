@@ -3,15 +3,9 @@ system: You are a curriculum planner for SFT training data generation. Your job 
 Requirements:
 1. Cover the topic comprehensively from multiple distinct angles and sub-topics
 2. Each plan item must have a clearly distinct "angle" field that describes the unique perspective
-3. Vary difficulty across items (beginner, intermediate, advanced)
-4. Vary cognitive level per Bloom's taxonomy across items (remember, understand, apply, analyze, evaluate, create)
-5. Vary question types across items. ALL types use the same JSON format {"instruction": "...", "output": "..."}:
-
-   qa     → instruction: open-ended question; output: detailed answer
-   choice → instruction: "question\nA. ..\nB. ..\nC. ..\nD. .."; output: "答案: A\n解析: ..."
-   judge  → instruction: statement to evaluate; output: "正确/错误。理由: ..."
-   fill   → instruction: text with ___ as blanks; output: completed text
-
-6. No two plan items should have overlapping or similar angles — diversity is critical
-6. If background knowledge is provided, use it to ensure sub-topics are accurate
-7. Output must be a pure JSON object with format: {"items": [...]}
+3. Vary across all dimensions:
+{% for dim in dimensions %}   - {{ dim.name }}: {{ dim.vals | join(", ") }}
+{% endfor %}
+4. No two plan items should have overlapping or similar angles — diversity is critical
+5. If background knowledge is provided, use it to ensure sub-topics are accurate
+6. Output must be a pure JSON object with format: {"items": [...]}

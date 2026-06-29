@@ -63,9 +63,10 @@ python -m alembic.cli view output.jsonl -j
 ### 数据生成
 
 - 三种策略可独立或组合使用，按 `weight` 比例分配生成量
-- 支持单轮（instruction/output）和多轮对话（2-4 轮）
-- 模板系统支持中英文，Jinja2 随机化题型（8 种）和难度（3 级）提升多样性
-- 可配置并行 API 调用（TopicDriven / SeedDriven）
+- **多角度正交生成**：可配置任意多个维度自动正交组合，Jinja2 按比例均分，代码零改动
+- 支持单轮（instruction/output）和多轮对话
+
+数据生成链路：`topics + knowledge`（手动指定）→ Planner LLM 生成 `sub_topic + angle` → Executor LLM 生成 `instruction + output`。每条输出 `metadata` 携带完整维度标签。
 
 ### 数据清洗
 
@@ -116,15 +117,20 @@ api:
   model: qwen-plus
   lang: zh
   concurrency: 4
-  params:
-    temperature: 0.8
-    max_tokens: 2048
 
 strategies:
   - type: topic_driven
+    dimensions:
+      - name: difficulty
+        vals: [入门, 进阶, 高级]
+      - name: cognitive_level
+        vals: [记忆, 理解, 应用, 分析, 评价, 创造]
+      - name: question_type
+        vals: [问答题, 选择题, 判断题, 填空题]
     topics:
       - topic: "Python 编程"
         weight: 1
+        knowledge: "Python 语法、数据类型、控制流、函数、面向对象"
     total_count: 100
 
 output:
