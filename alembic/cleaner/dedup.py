@@ -9,7 +9,7 @@ import abc
 import logging
 from typing import Callable, Optional
 
-from alembic.cleaner.ops import minhash_dedup
+from alembic.cleaner.ops import minhash_bruteforce_dedup, minhash_lsh_dedup
 
 logger = logging.getLogger(__name__)
 
@@ -38,20 +38,34 @@ class MinHashDedup(DedupStrategy):
         num_perm: int = 128,
         ngram_n: int = 3,
         text_fn: Optional[Callable[[dict], str]] = None,
+        use_lsh: bool = True,
+        bands: int = 20,
     ):
         self._threshold = threshold
         self._num_perm = num_perm
         self._ngram_n = ngram_n
         self._text_fn = text_fn or default_sample_text
+        self._use_lsh = use_lsh
+        self._bands = bands
 
     def filter(self, candidates: list[dict]) -> list[dict]:
-        kept, _ = minhash_dedup(
-            candidates,
-            text_fn=self._text_fn,
-            threshold=self._threshold,
-            num_perm=self._num_perm,
-            ngram_n=self._ngram_n,
-        )
+        if self._use_lsh:
+            kept, _ = minhash_lsh_dedup(
+                candidates,
+                text_fn=self._text_fn,
+                threshold=self._threshold,
+                num_perm=self._num_perm,
+                ngram_n=self._ngram_n,
+                bands=self._bands,
+            )
+        else:
+            kept, _ = minhash_bruteforce_dedup(
+                candidates,
+                text_fn=self._text_fn,
+                threshold=self._threshold,
+                num_perm=self._num_perm,
+                ngram_n=self._ngram_n,
+            )
         return kept
 
 
