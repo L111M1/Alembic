@@ -230,22 +230,20 @@ class ScoreFilterStage(PipelineStage):
         if min_score <= 0 or not ctx.samples:
             return
 
-        output_path = cfg.output.path
-        kept = dropped = 0
+        kept, dropped = 0, 0
+        filtered: list[dict] = []
+        for sample in ctx.samples:
+            total = sample.get("total_score", 0)
+            if total >= min_score:
+                filtered.append(sample)
+                kept += 1
+            else:
+                dropped += 1
 
-        with open(output_path, "w", encoding="utf-8") as fout:
-            for sample in ctx.samples:
-                total = sample.get("total_score", 0)
-                if total >= min_score:
-                    fout.write(json.dumps(sample, ensure_ascii=False) + "\n")
-                    kept += 1
-                else:
-                    dropped += 1
-
+        ctx.samples = filtered
         ctx.collector.record_score_filter(kept, dropped)
-        ctx.output_path = output_path
         logger.info(
-            f"Score filter (min={min_score}): kept={kept}, dropped={dropped}, result={output_path}"
+            f"Score filter (min={min_score}): kept={kept}, dropped={dropped}"
         )
 
 

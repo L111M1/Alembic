@@ -1,5 +1,7 @@
+import json
 import logging
 import random
+from pathlib import Path
 
 from alembic.config import AppConfig
 from alembic.core.stages import PipelineContext, PipelineStage
@@ -41,7 +43,13 @@ class Pipeline:
         for stage in self._build_stages():
             stage.process(ctx)
 
-        if not self._config.dry_run and self._config.output.path:
+        if not self._config.dry_run and ctx.samples and self._config.output.path:
+            out_path = Path(self._config.output.path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "w", encoding="utf-8") as f:
+                for s in ctx.samples:
+                    f.write(json.dumps(s, ensure_ascii=False) + "\n")
+            logger.info("Wrote %d samples to %s", len(ctx.samples), out_path)
             self._collector.save_report(self._config.output.path)
 
         return ctx.stats
