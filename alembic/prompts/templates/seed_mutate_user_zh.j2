@@ -1,0 +1,18 @@
+{% set question_types = ["问答题", "选择题", "判断题", "填空题"] %}
+{% set difficulties = ["入门", "进阶", "高级"] %}
+{% set question_type = override_question_type if override_question_type is defined else random.choice(question_types) %}
+{% set difficulty = override_difficulty if override_difficulty is defined else random.choice(difficulties) %}
+user: 以下是一条经过变异的参考样本。
+
+变异操作：{{ mutation }}
+
+难度：{{ difficulty }}
+提问类型：{{ question_type }}
+
+{{ examples }}
+
+请对不同的主题应用类似的变异，生成一条新的 SFT 训练数据。用纯 JSON 格式输出，只输出 JSON，不要有其他文字：
+{
+  "instruction": "全新的用户指令",
+  "output": "对应的回答"
+}

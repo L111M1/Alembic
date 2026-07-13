@@ -65,7 +65,7 @@ alembic/
 ├── strategies/         # 生成策略（策略模式）
 │   ├── base.py         # GenerationStrategy 抽象类 + 重试、并发分发
 │   ├── topic_driven.py # 两阶段：规划 → 执行，子主题分支
-│   ├── seed_driven.py  # 基于种子示例的生成（few-shot）
+│   ├── seed_driven.py  # 基于种子示例的生成（few-shot）+ 进化算子（交叉/变异）
 │   └── composite.py    # CompositeStrategy + merge_generators
 │
 ├── cleaner/            # 生成后清洗
@@ -82,7 +82,7 @@ alembic/
 │
 ├── prompts/            # Jinja2 提示词模板
 │   ├── builder.py      # PromptBuilder — 流式模板引擎，自动语言切换（_zh）
-│   └── templates/      # 22 个 .j2 文件：planner / topic_driven / seed / scorer
+│   └── templates/      # 28 个 .j2 文件：planner / topic_driven / seed / seed_crossover / seed_mutate / scorer
 │                        #   均有 _zh（中文）和 _mt（多轮对话）变体
 │
 └── writers/            # 输出写出器
@@ -105,6 +105,8 @@ classDiagram
     }
     class SeedDrivenStrategy {
         +iter_prompts()
+        +_build_crossover()
+        +_build_mutate()
     }
     class CompositeStrategy {
         +iter_prompts()
@@ -231,7 +233,32 @@ strategies:
 ```
 
 ### SeedDrivenStrategy
-基于种子示例（few-shot）模仿其风格与深度生成样本。
+基于种子示例（few-shot）模仿其风格与深度生成样本。支持进化算子（`evolution` 配置）：
+
+- **交叉（crossover）**：随机抽取两个种子 A/B，按 `crossover_mode` 生成新样本
+  - `instruction_output`：A 出指令 + B 出输出风格
+  - `compose`：合并 A、B 主题为复合任务
+- **变异（mutate）**：随机选一个种子，施加用户自定义的变异类型（改难度、换语气、加约束等）
+  - `mutation_types` 必须显式配置，每项定义 `name`/`prompt`/`values`（可选 `override_field`）
+
+每次生成按 `crossover_rate` / `mutate_rate` 轮盘赌选择模式，剩余概率走默认 few-shot。详见 [config.md](config.md#evolution--交叉与变异)。
+
+```yaml
+strategies:
+  - type: seed_driven
+    seed_file: ./seeds.jsonl
+    target_count: 100
+    evolution:
+      crossover_rate: 0.3
+      mutate_rate: 0.3
+      mutation_types:
+        - name: difficulty
+          values: [beginner, advanced]
+          prompt: "Change the difficulty to '{value}'"
+        - name: tone
+          values: [formal, casual]
+          prompt: "Rewrite in a {value} tone"
+```
 
 ### CompositeStrategy
 加权合并多个策略，通过 `merge_generators` 交错输出。

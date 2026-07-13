@@ -1,0 +1,22 @@
+{% set question_types = ["qa", "choice", "judge", "fill"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
+user: Below are two reference conversations for crossover.
+
+Crossover directive: {{ crossover_directive }}
+
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
+
+{{ examples }}
+
+Generate one new multi-turn conversation (2-4 exchanges) that follows the crossover directive. Output pure JSON only, no extra text:
+{
+  "messages": [
+    {"role": "user", "content": "new user question"},
+    {"role": "assistant", "content": "corresponding answer"},
+    {"role": "user", "content": "follow-up question"},
+    {"role": "assistant", "content": "follow-up answer"}
+  ]
+}

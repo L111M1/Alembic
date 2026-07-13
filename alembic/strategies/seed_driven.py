@@ -1,6 +1,6 @@
 import logging
 import random
-from typing import Iterator
+from typing import Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
 from alembic.core.types import SeedSample
@@ -22,12 +22,180 @@ class SeedDrivenStrategy(GenerationStrategy):
         self._target_count = int(params.get("target_count", 10))
         self._multi_turn = bool(params.get("multi_turn", False))
 
+        evo = params.get("evolution") or {}
+        self._crossover_rate = self._clamp(float(evo.get("crossover_rate", 0.0)))
+        self._mutate_rate = self._clamp(float(evo.get("mutate_rate", 0.0)))
+        total = self._crossover_rate + self._mutate_rate
+        if total > 1.0:
+            self._crossover_rate /= total
+            self._mutate_rate /= total
+        self._crossover_mode = evo.get("crossover_mode", "instruction_output")
+        self._mutation_defs: list[dict] = self._resolve_mutations(evo.get("mutation_types"))
+        if self._mutate_rate > 0 and not self._mutation_defs:
+            logger.warning(
+                "mutate_rate=%.2f but no valid mutation_types configured; "
+                "mutation will fall back to default few-shot",
+                self._mutate_rate,
+            )
+
+    def _resolve_mutations(self, raw_types: Optional[list]) -> list[dict]:
+        if not raw_types:
+            return []
+        defs: list[dict] = []
+        for entry in raw_types:
+            if not isinstance(entry, dict):
+                logger.warning("mutation_types entry must be a dict, skipping: %s", entry)
+                continue
+            name = entry.get("name", "custom")
+            prompt = entry.get("prompt", "")
+            if not prompt:
+                logger.warning("Mutation '%s' has no prompt, skipping", name)
+                continue
+            d: dict = {"name": name, "prompt": prompt}
+            values = entry.get("values")
+            if values:
+                d["values"] = list(values)
+            of = entry.get("override_field")
+            if of in ("difficulty", "question_type"):
+                d["override_field"] = of
+            defs.append(d)
+        return defs
+
+    @staticmethod
+    def _clamp(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    def _seed_io(self, seed: SeedSample) -> tuple[str, str]:
+        if seed.instruction and seed.output:
+            return seed.instruction, seed.output
+        if seed.messages:
+            users = [m["content"] for m in seed.messages if m.get("role") == "user"]
+            assistants = [m["content"] for m in seed.messages if m.get("role") == "assistant"]
+            if users and assistants:
+                return users[0], assistants[0]
+        return "", ""
+
+    def _format_seed_single(self, seed: SeedSample, label: str) -> str:
+        instr, out = self._seed_io(seed)
+        return f"{label}:\n  instruction: {instr}\n  output: {out}"
+
+    def _format_seed_mt(self, seed: SeedSample, label: str) -> str:
+        if seed.messages:
+            turns = "\n    ".join(f"[{m['role']}]: {m['content']}" for m in seed.messages)
+            return f"{label}:\n    {turns}"
+        instr, out = self._seed_io(seed)
+        return f"{label}:\n    [user]: {instr}\n    [assistant]: {out}"
+
+    def _pick_mode(self) -> str:
+        r = random.random()
+        if r < self._crossover_rate:
+            return "crossover"
+        if r < self._crossover_rate + self._mutate_rate:
+            return "mutate"
+        return "default"
+
+    def _build_crossover(self) -> Optional[tuple[str, str]]:
+        if len(self._seeds) < 2:
+            logger.warning("Crossover requires >=2 seeds, falling back to default")
+            return None
+        a, b = random.sample(self._seeds, 2)
+        if self._multi_turn:
+            ex_a = self._format_seed_mt(a, "Conversation A")
+            ex_b = self._format_seed_mt(b, "Conversation B")
+            directive = self._crossover_directive_mt()
+        else:
+            ex_a = self._format_seed_single(a, "Sample A")
+            ex_b = self._format_seed_single(b, "Sample B")
+            directive = self._crossover_directive_single()
+        examples = f"{ex_a}\n\n{ex_b}"
+        return examples, directive
+
+    def _crossover_directive_single(self) -> str:
+        if self._crossover_mode == "compose":
+            return (
+                "Combine the topics of Sample A and Sample B into a single composite "
+                "instruction; the output should address both topics."
+            )
+        return (
+            "Use Sample A as the instruction source (the user request) and Sample B as "
+            "the output style reference; generate a new sample whose instruction solves "
+            "a problem similar to A and whose output is written in the style of B."
+        )
+
+    def _crossover_directive_mt(self) -> str:
+        if self._crossover_mode == "compose":
+            return (
+                "Combine the topics of Conversation A and Conversation B into a single "
+                "multi-turn conversation that weaves together themes from both."
+            )
+        return (
+            "Open the conversation with a question similar to Conversation A; let the "
+            "assistant's response style and follow-up pattern follow Conversation B."
+        )
+
+    def _build_mutate(self) -> Optional[tuple[str, str, dict]]:
+        if not self._seeds or not self._mutation_defs:
+            return None
+        mdef = random.choice(self._mutation_defs)
+        name = mdef["name"]
+        prompt_tmpl = mdef["prompt"]
+        values = mdef.get("values")
+        template_vars: dict = {}
+        if values:
+            value = random.choice(values)
+            mutation_str = prompt_tmpl.replace("{value}", str(value))
+            of = mdef.get("override_field")
+            if of == "difficulty":
+                template_vars["override_difficulty"] = value
+            elif of == "question_type":
+                template_vars["override_question_type"] = value
+        else:
+            mutation_str = prompt_tmpl
+        template_vars["mutation"] = mutation_str
+        seed = random.choice(self._seeds)
+        if self._multi_turn:
+            examples = self._format_seed_mt(seed, "Reference conversation")
+        else:
+            examples = self._format_seed_single(seed, "Reference sample")
+        template_vars["examples"] = examples
+        return name, examples, template_vars
+
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         if not self._seeds or self._example_num == 0:
             logger.warning("No seeds loaded, skipping SeedDrivenStrategy")
             return
         suffix = "_mt" if self._multi_turn else ""
         for i in range(self._target_count):
+            mode = self._pick_mode()
+            if mode == "crossover":
+                built = self._build_crossover()
+                if built is None:
+                    mode = "default"
+                else:
+                    examples, directive = built
+                    builder = PromptBuilder(lang=self._lang)
+                    builder.from_template(f"seed_system{suffix}.j2")
+                    builder.from_template(
+                        f"seed_crossover_user{suffix}.j2",
+                        examples=examples,
+                        crossover_directive=directive,
+                    )
+                    yield (f"seed_crossover:{i}", builder.build())
+                    continue
+            if mode == "mutate":
+                built = self._build_mutate()
+                if built is None:
+                    mode = "default"
+                else:
+                    mname, _, template_vars = built
+                    builder = PromptBuilder(lang=self._lang)
+                    builder.from_template(f"seed_system{suffix}.j2")
+                    builder.from_template(
+                        f"seed_mutate_user{suffix}.j2",
+                        **template_vars,
+                    )
+                    yield (f"seed_mutate:{i}:{mname}", builder.build())
+                    continue
             chosen = random.sample(self._seeds, min(self._example_num, len(self._seeds)))
             examples_text_parts = []
             for j, seed in enumerate(chosen, 1):
@@ -40,12 +208,19 @@ class SeedDrivenStrategy(GenerationStrategy):
             builder = PromptBuilder(lang=self._lang)
             builder.from_template(f"seed_system{suffix}.j2")
             builder.from_template(f"seed_user{suffix}.j2", examples=examples_text)
-            messages = builder.build()
-            prompt_id = f"seed:{i}"
-            yield (prompt_id, messages)
+            yield (f"seed:{i}", builder.build())
 
     def _build_metadata(self, prompt_id: str) -> dict:
-        return {"strategy": "seed_driven"}
+        meta = {"strategy": "seed_driven"}
+        if prompt_id.startswith("seed_crossover:"):
+            meta["evolution"] = "crossover"
+            meta["crossover_mode"] = self._crossover_mode
+        elif prompt_id.startswith("seed_mutate:"):
+            meta["evolution"] = "mutate"
+            parts = prompt_id.split(":", 2)
+            if len(parts) == 3:
+                meta["mutation_type"] = parts[2]
+        return meta
 
     def estimated_count(self) -> int:
         return self._target_count

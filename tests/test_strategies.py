@@ -1,3 +1,5 @@
+import random
+
 from alembic.prompts.builder import load_seeds
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy
@@ -148,3 +150,315 @@ class TestSeedDriven:
         assert len(samples) == 1
         assert samples[0].is_multi_turn
         assert len(samples[0].messages) == 4
+
+    def test_no_evolution_defaults_to_fewshot(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 3
+        for pid, _ in prompts:
+            assert pid.startswith("seed:")
+
+    def test_crossover_mode_produces_crossover_prompts(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {"crossover_rate": 1.0, "mutate_rate": 0.0},
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 5
+        for pid, messages in prompts:
+            assert pid.startswith("seed_crossover:")
+            user = messages[-1]["content"]
+            assert "Crossover directive" in user
+            assert "Sample A" in user
+            assert "Sample B" in user
+
+    def test_crossover_compose_mode(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {"crossover_rate": 1.0, "mutate_rate": 0.0, "crossover_mode": "compose"},
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            user = messages[-1]["content"]
+            assert "Combine the topics" in user
+
+    def test_crossover_falls_back_with_one_seed(self, fake_api, seed_jsonl, tmp_path):
+        one_seed = tmp_path / "one.jsonl"
+        one_seed.write_text('{"instruction": "q", "output": "a"}\n', encoding="utf-8")
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": str(one_seed), "example_num": 1, "target_count": 3,
+            "evolution": {"crossover_rate": 1.0, "mutate_rate": 0.0},
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, _ in prompts:
+            assert pid.startswith("seed:")
+
+    _MUT_DIFFICULTY = [
+        {"name": "difficulty", "values": ["beginner", "intermediate", "advanced"],
+         "prompt": "Change the difficulty to '{value}'", "override_field": "difficulty"},
+    ]
+    _MUT_CONSTRAINT = [
+        {"name": "constraint", "values": ["be concise", "use examples"],
+         "prompt": "Add this constraint: {value}"},
+    ]
+    _MUT_TONE = [
+        {"name": "tone", "values": ["formal", "casual", "academic"],
+         "prompt": "Rewrite in a {value} tone"},
+    ]
+
+    def test_mutate_mode_produces_mutate_prompts(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {"crossover_rate": 0.0, "mutate_rate": 1.0,
+                          "mutation_types": self._MUT_TONE},
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 5
+        for pid, messages in prompts:
+            assert pid.startswith("seed_mutate:")
+            user = messages[-1]["content"]
+            assert "Mutation" in user
+            assert "Reference sample" in user
+
+    def test_mutate_difficulty_override(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 20,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": self._MUT_DIFFICULTY,
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert pid.startswith("seed_mutate:")
+            user = messages[-1]["content"]
+            assert "Change the difficulty to" in user
+
+    def test_mutate_constraint_type(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": self._MUT_CONSTRAINT,
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            user = messages[-1]["content"]
+            assert "constraint" in user.lower()
+
+    def test_mixed_rates_produce_all_modes(self, fake_api, seed_jsonl):
+        random.seed(42)
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 50,
+            "evolution": {"crossover_rate": 0.3, "mutate_rate": 0.3,
+                          "mutation_types": self._MUT_TONE},
+        })
+        prompts = list(strategy.iter_prompts())
+        modes = {pid.split(":")[0] for pid, _ in prompts}
+        assert "seed" in modes
+        assert "seed_crossover" in modes
+        assert "seed_mutate" in modes
+
+    def test_evolution_metadata(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {"crossover_rate": 1.0, "mutate_rate": 0.0, "crossover_mode": "compose"},
+        })
+        meta = strategy._build_metadata("seed_crossover:0")
+        assert meta["evolution"] == "crossover"
+        assert meta["crossover_mode"] == "compose"
+        meta2 = strategy._build_metadata("seed_mutate:0")
+        assert meta2["evolution"] == "mutate"
+        meta3 = strategy._build_metadata("seed:0")
+        assert "evolution" not in meta3
+
+    def test_rates_normalized_when_exceeding_one(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {"crossover_rate": 0.8, "mutate_rate": 0.8},
+        })
+        assert strategy._crossover_rate + strategy._mutate_rate <= 1.0 + 1e-9
+        assert strategy._crossover_rate == 0.5
+        assert strategy._mutate_rate == 0.5
+
+    def test_crossover_multi_turn(self, fake_multi_turn_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_multi_turn_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "multi_turn": True,
+            "evolution": {"crossover_rate": 1.0, "mutate_rate": 0.0},
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert pid.startswith("seed_crossover:")
+            user = messages[-1]["content"]
+            assert "Conversation A" in user
+            assert "Conversation B" in user
+            assert "multi-turn" in user.lower()
+
+    def test_mutate_multi_turn(self, fake_multi_turn_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_multi_turn_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "multi_turn": True,
+            "evolution": {"crossover_rate": 0.0, "mutate_rate": 1.0,
+                          "mutation_types": self._MUT_TONE},
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert pid.startswith("seed_mutate:")
+            user = messages[-1]["content"]
+            assert "Reference conversation" in user
+
+    def test_mutate_without_mutation_types_falls_back(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {"crossover_rate": 0.0, "mutate_rate": 1.0},
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, _ in prompts:
+            assert pid.startswith("seed:")
+
+    def test_custom_mutation_with_values(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "tone", "values": ["formal", "casual", "academic"],
+                     "prompt": "Rewrite in a {value} tone"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        assert len(prompts) == 5
+        for pid, messages in prompts:
+            assert pid.startswith("seed_mutate:")
+            assert "tone" in pid
+            user = messages[-1]["content"]
+            assert "Rewrite in a" in user
+            assert "tone" in user
+
+    def test_custom_mutation_static_prompt(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "simplify", "prompt": "Simplify the instruction to be more basic"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert "simplify" in pid
+            user = messages[-1]["content"]
+            assert "Simplify the instruction" in user
+
+    def test_custom_mutation_zh_prompt(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "lang": "zh",
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "domain", "values": ["金融", "医疗", "法律"],
+                     "prompt": "将问题改写为{value}领域的版本"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert "domain" in pid
+            user = messages[-1]["content"]
+            assert "领域" in user
+
+    def test_multiple_custom_mutations(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 30,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "difficulty", "values": ["easy", "hard"],
+                     "prompt": "Change difficulty to {value}"},
+                    {"name": "tone", "values": ["formal", "casual"],
+                     "prompt": "Rewrite in a {value} tone"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        names = {pid.split(":")[-1] for pid, _ in prompts}
+        assert "difficulty" in names
+        assert "tone" in names
+
+    def test_custom_mutation_override_difficulty(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 5,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "custom_diff", "values": ["easy", "hard"],
+                     "prompt": "Set difficulty to {value}",
+                     "override_field": "difficulty"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            user = messages[-1]["content"]
+            assert "Set difficulty to" in user
+            assert "easy" in user or "hard" in user
+
+    def test_string_entry_skipped(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": ["difficulty"],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, _ in prompts:
+            assert pid.startswith("seed:")
+
+    def test_custom_mutation_no_prompt_skipped(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": [
+                    {"name": "bad", "values": ["x"]},
+                    {"name": "good", "prompt": "Always use this mutation"},
+                ],
+            },
+        })
+        prompts = list(strategy.iter_prompts())
+        for pid, messages in prompts:
+            assert "good" in pid
+            assert "bad" not in pid
+
+    def test_mutation_type_in_metadata(self, fake_api, seed_jsonl):
+        strategy = SeedDrivenStrategy(fake_api, {
+            "seed_file": seed_jsonl, "example_num": 2, "target_count": 3,
+            "evolution": {
+                "crossover_rate": 0.0,
+                "mutate_rate": 1.0,
+                "mutation_types": self._MUT_DIFFICULTY,
+            },
+        })
+        meta = strategy._build_metadata("seed_mutate:0:difficulty")
+        assert meta["evolution"] == "mutate"
+        assert meta["mutation_type"] == "difficulty"
+        meta2 = strategy._build_metadata("seed_mutate:0")
+        assert meta2["evolution"] == "mutate"
+        assert "mutation_type" not in meta2

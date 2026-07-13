@@ -140,6 +140,7 @@ api:
 | `example_num` | int | 否 | 每批参考的样例数（默认 3） |
 | `target_count` | int | 是 | 目标生成条数 |
 | `field_map` | dict | 否 | 字段映射，如 `{instruction: question, output: response}` |
+| `evolution` | dict | 否 | 进化配置（交叉/变异），见下方 |
 
 ```yaml
 - type: seed_driven
@@ -148,6 +149,62 @@ api:
   example_num: 2
   target_count: 30
 ```
+
+#### evolution — 交叉与变异
+
+借鉴遗传算法思想，在 few-shot 基础上增加两种算子。每次生成按轮盘赌选择模式：
+`crossover_rate` 概率走交叉 → `mutate_rate` 概率走变异 → 其余走默认 few-shot。
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `crossover_rate` | float | 0.0 | 交叉概率（0.0~1.0），与 `mutate_rate` 之和 >1 时自动归一化 |
+| `mutate_rate` | float | 0.0 | 变异概率（0.0~1.0） |
+| `crossover_mode` | string | `instruction_output` | 交叉模式：`instruction_output`（A 出指令 + B 出输出风格）或 `compose`（合并 A、B 主题为复合任务） |
+| `mutation_types` | array | `[]` | 变异类型定义列表，**必须显式配置**，每项为一个 dict（见下方） |
+
+> `mutation_types` 不配或为空时，变异模式自动回退到默认 few-shot。
+
+**`mutation_types[]` 条目格式**（每项必须是 dict）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 否 | 变异类型名（用于 metadata 和 prompt_id，默认 `custom`） |
+| `prompt` | string | 是 | 变异指令模板，支持 `{value}` 占位符 |
+| `values` | array | 否 | 值池，每次随机选一个填入 `{value}`；省略时 `prompt` 作为静态变异指令 |
+| `override_field` | string | 否 | 同步覆盖模板字段：`difficulty` 或 `question_type` |
+
+```yaml
+- type: seed_driven
+  weight: 0.3
+  seed_file: ./seeds.jsonl
+  example_num: 2
+  target_count: 100
+  evolution:
+    crossover_rate: 0.3
+    mutate_rate: 0.3
+    crossover_mode: instruction_output
+    mutation_types:
+      - name: difficulty
+        values: [beginner, intermediate, advanced]
+        prompt: "Change the difficulty to '{value}'"
+        override_field: difficulty
+      - name: tone
+        values: [formal, casual, academic]
+        prompt: "Rewrite in a {value} tone"
+      - name: simplify                        # 无 values → 静态变异指令
+        prompt: "Simplify the instruction to be more basic"
+      - name: domain
+        values: [金融, 医疗, 法律]
+        prompt: "将问题改写为{value}领域的版本"
+```
+
+生成的样本 metadata 会标记进化模式：
+
+| metadata 字段 | 说明 |
+|---------------|------|
+| `evolution` | `crossover` 或 `mutate`（默认 few-shot 时无此字段） |
+| `crossover_mode` | 交叉模式（仅 crossover） |
+| `mutation_type` | 变异类型名（仅 mutate） |
 
 ## 质量校验
 
@@ -317,6 +374,7 @@ output:
 | 提高 temperature | `api.params.temperature: 0.95` | 越大输出越随机（0.8~0.95） |
 | 题型/难度随机化 | 模板内置 8 × 3 = 24 组合 | 每次生成随机选题型和难度 |
 | knowledge 多样化 | `knowledge: "...请从不同角度提问"` | 引导模型变换提问角度 |
+| 种子交叉/变异 | `seed_driven.evolution` | 遗传算法式算子：交叉两种子、对种子施加变异 |
 | 语义去重 | `cleaner.embedding_dedup: true` | 生成后清洗语义相似数据 |
 | 多策略组合 | `strategies[]` 配置多种策略 | topic + seed 混合 |
 

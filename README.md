@@ -54,6 +54,7 @@ python -m alembic.cli view output.jsonl -j
 |------|----------|----------|
 | `topic_driven` | 明确领域覆盖需求，按主题/难度/题型分配 | `topics` + `total_count` |
 | `seed_driven` | 有少量高质量种子数据，扩增同风格样本 | `seed_file` + `example_num` + `target_count` |
+| `seed_driven` + `evolution` | 种子扩增 + 遗传算法式交叉/变异增强多样性 | `evolution.crossover_rate` + `evolution.mutation_types` |
 
 详细参数说明见 [docs/config.md](docs/config.md#生成策略)。
 
@@ -63,6 +64,7 @@ python -m alembic.cli view output.jsonl -j
 
 - 两种策略可独立或组合使用，按 `weight` 比例分配生成量
 - **多角度正交生成**：可配置任意多个维度自动正交组合，Jinja2 按比例均分，代码零改动
+- **种子进化算子**：`seed_driven` 支持 `evolution` 子配置，按概率执行交叉（合并两个种子）和变异（对种子施加自定义变换），`mutation_types` 完全用户自定义
 - 支持单轮（instruction/output）和多轮对话
 
 数据生成链路：`topics + knowledge`（手动指定）→ Planner LLM 生成 `sub_topic + angle` → Executor LLM 生成 `instruction + output`。每条输出 `metadata` 携带完整维度标签。

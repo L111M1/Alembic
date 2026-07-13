@@ -1,0 +1,18 @@
+{% set question_types = ["qa", "choice", "judge", "fill"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set question_type = random.choice(question_types) %}
+{% set difficulty = random.choice(difficulties) %}
+user: Below are two reference samples for crossover.
+
+Crossover directive: {{ crossover_directive }}
+
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
+
+{{ examples }}
+
+Generate one new SFT training sample that follows the crossover directive. Output pure JSON only, no extra text:
+{
+  "instruction": "new user instruction",
+  "output": "corresponding answer"
+}

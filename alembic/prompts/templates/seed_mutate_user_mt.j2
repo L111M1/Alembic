@@ -1,0 +1,22 @@
+{% set question_types = ["qa", "choice", "judge", "fill"] %}
+{% set difficulties = ["beginner", "intermediate", "advanced"] %}
+{% set question_type = override_question_type if override_question_type is defined else random.choice(question_types) %}
+{% set difficulty = override_difficulty if override_difficulty is defined else random.choice(difficulties) %}
+user: Below is a reference conversation that has been mutated.
+
+Mutation: {{ mutation }}
+
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
+
+{{ examples }}
+
+Generate one new multi-turn conversation (2-4 exchanges) by applying a similar mutation to a different topic. Output pure JSON only, no extra text:
+{
+  "messages": [
+    {"role": "user", "content": "new user question"},
+    {"role": "assistant", "content": "corresponding answer"},
+    {"role": "user", "content": "follow-up question"},
+    {"role": "assistant", "content": "follow-up answer"}
+  ]
+}
