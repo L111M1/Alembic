@@ -120,7 +120,7 @@ class SeedDrivenStrategy(GenerationStrategy):
             f"a problem similar to A and whose output is written in the style of B."
         )
 
-    def _build_mutate(self) -> Optional[tuple[str, dict]]:
+    def _build_mutate(self) -> Optional[tuple[str, dict, Optional[str]]]:
         if not self._seeds or not self._mutation_defs:
             return None
         mdef = random.choice(self._mutation_defs)
@@ -128,9 +128,11 @@ class SeedDrivenStrategy(GenerationStrategy):
         prompt_tmpl = mdef["prompt"]
         values = mdef.get("values")
         template_vars: dict = {}
+        chosen_value: Optional[str] = None
         if values:
             value = random.choice(values)
             mutation_str = prompt_tmpl.replace("{value}", str(value))
+            chosen_value = str(value)
             of = mdef.get("override_field")
             if of == "difficulty":
                 template_vars["override_difficulty"] = value
@@ -142,7 +144,7 @@ class SeedDrivenStrategy(GenerationStrategy):
         seed = random.choice(self._seeds)
         label = "Reference conversation" if self._multi_turn else "Reference sample"
         template_vars["examples"] = self._format_seed(seed, label)
-        return name, template_vars
+        return name, template_vars, chosen_value
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         if not self._seeds or self._example_num == 0:
@@ -171,14 +173,17 @@ class SeedDrivenStrategy(GenerationStrategy):
                 if built is None:
                     mode = "default"
                 else:
-                    mname, template_vars = built
+                    mname, template_vars, chosen_value = built
+                    pid = f"seed_mutate:{i}:{mname}"
+                    if chosen_value:
+                        pid += f":{chosen_value}"
                     builder = PromptBuilder(lang=self._lang)
                     builder.from_template(f"seed_system{suffix}.j2")
                     builder.from_template(
                         f"seed_mutate_user{suffix}.j2",
                         **template_vars,
                     )
-                    yield (f"seed_mutate:{i}:{mname}", builder.build())
+                    yield (pid, builder.build())
                     continue
             chosen = random.sample(self._seeds, min(self._example_num, len(self._seeds)))
             examples_text_parts = []
@@ -201,9 +206,12 @@ class SeedDrivenStrategy(GenerationStrategy):
             meta["crossover_mode"] = self._crossover_mode
         elif prompt_id.startswith("seed_mutate:"):
             meta["evolution"] = "mutate"
-            parts = prompt_id.split(":", 2)
-            if len(parts) == 3:
+            parts = prompt_id.split(":")
+            # parts: ["seed_mutate", idx, type_name, ?value]
+            if len(parts) >= 3:
                 meta["mutation_type"] = parts[2]
+            if len(parts) >= 4:
+                meta["mutation_value"] = parts[3]
         return meta
 
     def estimated_count(self) -> int:

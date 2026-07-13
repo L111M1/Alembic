@@ -394,7 +394,7 @@ class TestSeedDriven:
             },
         })
         prompts = list(strategy.iter_prompts())
-        names = {pid.split(":")[-1] for pid, _ in prompts}
+        names = {pid.split(":")[2] for pid, _ in prompts}
         assert "difficulty" in names
         assert "tone" in names
 
