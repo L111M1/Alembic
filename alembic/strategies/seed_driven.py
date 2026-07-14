@@ -125,10 +125,23 @@ class SeedDrivenStrategy(GenerationStrategy):
             f"a problem similar to A and whose output is written in the style of B."
         )
 
+    @staticmethod
+    def _weighted_choice(defs: list[dict]) -> dict:
+        weights = [d.get("weight", 1) for d in defs]
+        total = sum(weights)
+        if total <= 0:
+            return random.choice(defs)
+        r = random.random() * total
+        for d, w in zip(defs, weights):
+            r -= w
+            if r <= 0:
+                return d
+        return defs[-1]
+
     def _build_mutate(self) -> Optional[tuple[str, dict, Optional[str]]]:
         if not self._seeds or not self._mutation_defs:
             return None
-        mdef = random.choice(self._mutation_defs)
+        mdef = self._weighted_choice(self._mutation_defs)
         name = mdef["name"]
         prompt_tmpl = mdef["prompt"]
         values = mdef.get("values")
