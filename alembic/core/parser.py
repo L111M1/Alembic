@@ -71,6 +71,7 @@ def _item_to_sample(item: dict, metadata: dict = None) -> GenerationSample | Non
         instruction=instruction,
         output=item.get("output", "").strip(),
         reasoning=item.get("reasoning", "").strip(),
+        system=item.get("system", "").strip(),
     )
     if metadata:
         sample.metadata = dict(metadata)

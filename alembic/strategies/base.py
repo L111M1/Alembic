@@ -49,21 +49,6 @@ class GenerationStrategy(abc.ABC):
 
     # ── generate ───────────────────────────────────────────────────────
 
-    @staticmethod
-    def _extract_system(messages: list[dict]) -> str:
-        for m in messages:
-            if m.get("role") == "system":
-                return m.get("content", "")
-        return ""
-
-    @staticmethod
-    def _inject_system(samples: list, system: str) -> None:
-        if not system:
-            return
-        for s in samples:
-            if s and not s.system:
-                s.system = system
-
     def generate(self) -> Iterator[GenerationSample]:
         if self._concurrency <= 1:
             yield from self._generate_sequential()
@@ -72,12 +57,10 @@ class GenerationStrategy(abc.ABC):
 
     def _generate_sequential(self) -> Iterator[GenerationSample]:
         for prompt_id, messages in self.iter_prompts():
-            system = self._extract_system(messages)
             meta = self._build_metadata(prompt_id)
             samples = self._call_with_retry(messages, meta, prompt_id)
             if samples is None:
                 continue
-            self._inject_system(samples, system)
             for s in samples:
                 if (s.instruction and s.output) or s.is_multi_turn:
                     yield s
@@ -93,13 +76,12 @@ class GenerationStrategy(abc.ABC):
         with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
             futures: dict = {}
             for prompt_id, messages in prompts:
-                system = self._extract_system(messages)
                 meta = self._build_metadata(prompt_id)
                 future = executor.submit(self._call_with_retry, messages, meta, prompt_id)
-                futures[future] = (prompt_id, system)
+                futures[future] = prompt_id
 
             for future in as_completed(futures):
-                prompt_id, system = futures[future]
+                prompt_id = futures[future]
                 try:
                     samples = future.result()
                 except Exception as e:
@@ -107,7 +89,6 @@ class GenerationStrategy(abc.ABC):
                     continue
                 if samples is None:
                     continue
-                self._inject_system(samples, system)
                 for s in samples:
                     if (s.instruction and s.output) or s.is_multi_turn:
                         yield s
