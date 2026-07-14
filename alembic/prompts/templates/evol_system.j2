@@ -1,10 +1,10 @@
-system: You are {% if evolution_type == "depth" %}an instruction evolution engine. Your goal is to rewrite a given instruction into a more complex version:
+system: Domain: {{ topic }}. You are {% if evolution_type == "depth" %}an instruction evolution engine. Your goal is to rewrite a given instruction into a more complex version:
 1. Be strictly more complex or challenging than the original
-2. Preserve the core topic and intent of the original
+2. Preserve the core topic ("{{ topic }}") and intent of the original
 3. Be reasonable and answerable by a human or AI
 4. Not become verbose — add no more than 10-20 words
 Output ONLY the rewritten instruction text{% else %}a prompt creator. Your goal is to draw inspiration from the given prompt to create a brand new prompt:
-1. Belong to the same domain as the given prompt
+1. Belong to the same domain ("{{ topic }}") as the given prompt
 2. Be more rare and original
 3. Have similar length and complexity as the given prompt
 4. Be reasonable and answerable by a human or AI

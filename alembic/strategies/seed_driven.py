@@ -3,7 +3,7 @@ import random
 from typing import Iterator, Optional
 
 from alembic.api.base import BaseAPIClient
-from alembic.core.types import SeedSample
+from alembic.core.types import SeedSample, random_topic
 from alembic.prompts.builder import PromptBuilder, load_seeds
 from alembic.strategies.base import GenerationStrategy
 
@@ -18,6 +18,7 @@ class SeedDrivenStrategy(GenerationStrategy):
         field_map = params.get("field_map")
         if seed_file:
             self._seeds = load_seeds(seed_file, field_map)
+        self._topic = params.get("topic") or random_topic()
         self._example_num = max(1, min(int(params.get("example_num", 3)), len(self._seeds)))
         self._target_count = int(params.get("target_count", 10))
         self._multi_turn = bool(params.get("multi_turn", False))
@@ -160,7 +161,7 @@ class SeedDrivenStrategy(GenerationStrategy):
                 else:
                     examples, directive = built
                     builder = PromptBuilder(lang=self._lang)
-                    builder.from_template(f"seed_system{suffix}.j2")
+                    builder.from_template(f"seed_system{suffix}.j2", topic=self._topic)
                     builder.from_template(
                         f"seed_crossover_user{suffix}.j2",
                         examples=examples,
@@ -178,7 +179,7 @@ class SeedDrivenStrategy(GenerationStrategy):
                     if chosen_value:
                         pid += f":{chosen_value}"
                     builder = PromptBuilder(lang=self._lang)
-                    builder.from_template(f"seed_system{suffix}.j2")
+                    builder.from_template(f"seed_system{suffix}.j2", topic=self._topic)
                     builder.from_template(
                         f"seed_mutate_user{suffix}.j2",
                         **template_vars,
@@ -195,12 +196,12 @@ class SeedDrivenStrategy(GenerationStrategy):
                     examples_text_parts.append(f"Example {j}:\n  instruction: {seed.instruction}\n  output: {seed.output}")
             examples_text = "\n\n".join(examples_text_parts)
             builder = PromptBuilder(lang=self._lang)
-            builder.from_template(f"seed_system{suffix}.j2")
+            builder.from_template(f"seed_system{suffix}.j2", topic=self._topic)
             builder.from_template(f"seed_user{suffix}.j2", examples=examples_text)
             yield (f"seed:{i}", builder.build())
 
     def _build_metadata(self, prompt_id: str) -> dict:
-        meta = {"strategy": "seed_driven"}
+        meta = {"strategy": "seed_driven", "topic": self._topic}
         if prompt_id.startswith("seed_crossover:"):
             meta["evolution"] = "crossover"
             meta["crossover_mode"] = self._crossover_mode

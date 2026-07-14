@@ -109,7 +109,10 @@ def load_seeds(seed_file: str, field_map: Optional[dict] = None) -> list[SeedSam
                 if field_map:
                     item = {v: item.get(k, "") for k, v in field_map.items()}
                 if "messages" in item and isinstance(item["messages"], list):
-                    seed = SeedSample(messages=item["messages"])
+                    seed = SeedSample(
+                        messages=item["messages"],
+                        topic=item.get("topic", ""),
+                    )
                     sys_msg = next((m["content"] for m in item["messages"] if m.get("role") == "system"), "")
                     seed.system = sys_msg
                     seeds.append(seed)
@@ -118,12 +121,14 @@ def load_seeds(seed_file: str, field_map: Optional[dict] = None) -> list[SeedSam
                         instruction=item["instruction"],
                         output=item["output"],
                         system=item.get("system", ""),
+                        topic=item.get("topic", ""),
                     ))
                 elif "instruction" in item and "response" in item:
                     seeds.append(SeedSample(
                         instruction=item["instruction"],
                         output=item["response"],
                         system=item.get("system", ""),
+                        topic=item.get("topic", ""),
                     ))
             except (json.JSONDecodeError, KeyError):
                 continue

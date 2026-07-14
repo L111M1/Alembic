@@ -6,7 +6,7 @@ from typing import Iterator, Optional
 from tqdm import tqdm
 
 from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
-from alembic.core.types import GenerationSample
+from alembic.core.types import GenerationSample, random_topic
 from alembic.prompts.builder import PromptBuilder, load_seeds
 from alembic.strategies.base import MultiStageStrategy
 
@@ -66,6 +66,7 @@ class EvolInstructStrategy(MultiStageStrategy):
         self._answer_temperature = float(params.get("answer_temperature", 0.6))
         self._answer_max_tokens = int(params.get("answer_max_tokens", 2048))
         self._include_seeds = bool(params.get("include_seeds", False))
+        self._topic = params.get("topic") or random_topic()
 
         self._evolved_items: list[tuple[str, dict]] = []
 
@@ -92,6 +93,7 @@ class EvolInstructStrategy(MultiStageStrategy):
             (s.instruction, {
                 "strategy": "evol_instruct",
                 "seed_index": i,
+                "topic": s.topic or self._topic,
                 "evolution_round": 0,
                 "evolution_type": "seed",
                 "evolution_chain": [s.instruction],
@@ -116,6 +118,7 @@ class EvolInstructStrategy(MultiStageStrategy):
                 (s.instruction, {
                     "strategy": "evol_instruct",
                     "seed_index": i,
+                    "topic": s.topic or self._topic,
                     "evolution_round": 0,
                     "evolution_type": "seed_fallback",
                     "evolution_chain": [s.instruction],
@@ -128,6 +131,7 @@ class EvolInstructStrategy(MultiStageStrategy):
                 (s.instruction, {
                     "strategy": "evol_instruct",
                     "seed_index": i,
+                    "topic": s.topic or self._topic,
                     "evolution_round": 0,
                     "evolution_type": "seed",
                     "evolution_chain": [s.instruction],
@@ -201,6 +205,7 @@ class EvolInstructStrategy(MultiStageStrategy):
         m = {
             "strategy": "evol_instruct",
             "seed_index": parent_meta.get("seed_index"),
+            "topic": parent_meta.get("topic", ""),
             "evolution_round": round_num,
             "evolution_type": etype,
             "evolution_chain": [],
@@ -212,7 +217,7 @@ class EvolInstructStrategy(MultiStageStrategy):
     def _evolve_depth(self, instruction: str, mutation: dict) -> Optional[str]:
         try:
             prompt = PromptBuilder(lang=self._lang)
-            prompt.from_template("evol_system.j2", evolution_type="depth")
+            prompt.from_template("evol_system.j2", evolution_type="depth", topic=self._topic)
             prompt.from_template(
                 "evol_depth_user.j2",
                 instruction=instruction,
@@ -230,7 +235,7 @@ class EvolInstructStrategy(MultiStageStrategy):
     def _evolve_breadth(self, instruction: str) -> Optional[str]:
         try:
             prompt = PromptBuilder(lang=self._lang)
-            prompt.from_template("evol_system.j2", evolution_type="breadth")
+            prompt.from_template("evol_system.j2", evolution_type="breadth", topic=self._topic)
             prompt.from_template("evol_breadth_user.j2", instruction=instruction)
             messages = prompt.build()
             raw = self._call_api(messages, use_json_mode=False,
@@ -309,8 +314,9 @@ class EvolInstructStrategy(MultiStageStrategy):
                         logger.warning("Answer generation failed: %s", e)
 
     def _generate_one_answer(self, idx: int, instruction: str, meta: dict) -> Optional[list[GenerationSample]]:
+        topic = meta.get("topic", self._topic)
         builder = PromptBuilder(lang=self._lang)
-        builder.from_template("evol_answer_system.j2")
+        builder.from_template("evol_answer_system.j2", topic=topic)
         builder.from_template(
             "evol_answer_user.j2",
             instruction=instruction,

@@ -1,4 +1,24 @@
+import random
 from dataclasses import dataclass, field
+
+
+DEFAULT_TOPICS = {
+    "cs": "计算机科学",
+    "ai": "人工智能",
+    "math": "数学",
+    "science": "自然科学",
+    "engineering": "工程技术",
+    "social": "社会科学",
+    "humanities": "人文艺术",
+    "health": "医学健康",
+    "business": "商业管理",
+    "education": "教育学习",
+}
+
+
+def random_topic() -> str:
+    """Pick a random default topic as fallback when none is specified."""
+    return random.choice(list(DEFAULT_TOPICS))
 
 
 @dataclass
@@ -6,6 +26,7 @@ class SeedSample:
     instruction: str = ""
     output: str = ""
     system: str = ""
+    topic: str = ""
     messages: list[dict] = field(default_factory=list)
 
 
