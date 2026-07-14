@@ -1,0 +1,15 @@
+user: Instruction:
+{{ instruction }}
+
+{% if require_reasoning %}
+Also include a step-by-step reasoning chain in the "reasoning" field.
+{% endif %}
+
+Write a response for the instruction above. Output ONLY valid JSON:
+{
+  "instruction": "copy of the instruction",
+  "output": "your response"
+  {% if require_reasoning -%}
+  ,"reasoning": "step-by-step reasoning"
+  {% endif %}
+}

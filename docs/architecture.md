@@ -50,39 +50,43 @@ alembic/
 ├── registry.py         # 3 个可插拔注册表 + 工厂函数
 │
 ├── api/                # LLM API 客户端
-│   ├── base.py         # BaseAPIClient 抽象类、RetryConfig、retry_with_backoff、RetryDecorator
+│   ├── base.py         # BaseAPIClient + RetryConfig + retry_with_backoff + RetryDecorator
 │   ├── providers.py    # OpenAICompatibleClient
 │   └── embedding.py    # 独立 Embedding API（语义去重用）
 │
-├── core/               # 管线编排与数据检查
+├── core/               # 管线编排、数据检查、响应解析
 │   ├── pipeline.py     # Pipeline 外观类 — 通过 StageRegistry 装配阶段
 │   ├── stages.py       # 4 个 PipelineStage 子类 + StageRegistry + PipelineContext
+│   ├── parser.py       # ResponseParser 类层次 — JSON 响应解析，替代 God Method _parse()
 │   ├── inspector.py    # DatasetInspector — 统计、分布、图表、相似度、质量
-│   ├── observer.py     # Observer 抽象类 + LogObserver + CompositeObserver
+│   ├── observer.py     # Observer + LogObserver + CompositeObserver
 │   ├── stats.py        # StatisticsCollector（实现 Observer）、报告生成
-│   └── types.py        # 领域类型：GenerationSample、GenerationStats、SeedSample
+│   └── types.py        # 领域类型：GenerationSample / SeedSample / GenerationStats
 │
 ├── strategies/         # 生成策略（策略模式）
-│   ├── base.py         # GenerationStrategy 抽象类 + 重试、并发分发
+│   ├── base.py         # GenerationStrategy ABC + MultiStageStrategy ABC + 重试 / 并发分发
 │   ├── topic_driven.py # 两阶段：规划 → 执行，子主题分支
 │   ├── seed_driven.py  # 基于种子示例的生成（few-shot）+ 进化算子（交叉/变异）
+│   ├── evol_instruct.py# 迭代指令进化（Evol-Instruct）：多轮深度/广度变异
 │   └── composite.py    # CompositeStrategy + merge_generators
 │
 ├── cleaner/            # 生成后清洗
 │   ├── cleaner.py      # DatasetCleaner：规范化 → 过滤 → 去重 → 写出
-│   ├── dedup.py        # DedupStrategy 抽象类 → MinHashDedup / SemanticDedup / NoDedup
+│   ├── dedup.py        # DedupStrategy → MinHashDedup / SemanticDedup / NoDedup
 │   └── ops.py          # 文本操作：URL/HTML 移除、重复率、MinHash 分词
 │
 ├── quality/            # 质量验证（责任链模式）
 │   ├── validators.py   # QualityValidator 链：长度 → 截断 → 去重
-│   └── rules.py        # QualityRule 抽象类、LengthRule、RatioRule、QualityRuleSet
+│   └── rules.py        # QualityRule + LengthRule + RatioRule + QualityRuleSet
 │
 ├── scoring/            # LLM 裁判评分
 │   └── scorer.py       # DatasetScorer：按维度评分
 │
 ├── prompts/            # Jinja2 提示词模板
 │   ├── builder.py      # PromptBuilder — 流式模板引擎，自动语言切换（_zh）
-│   └── templates/      # 28 个 .j2 文件：planner / topic_driven / seed / seed_crossover / seed_mutate / scorer
+│   └── templates/      # 38+ 个 .j2 文件：planner / topic_driven / seed / seed_crossover /
+│                        #   seed_mutate / scorer / evol_system / evol_depth_user /
+│                        #   evol_breadth_user / evol_answer_system / evol_answer_user /
 │                        #   均有 _zh（中文）和 _mt（多轮对话）变体
 │
 └── writers/            # 输出写出器
@@ -98,6 +102,13 @@ classDiagram
         +iter_prompts()* Iterator
         +generate() Iterator
         +_call_with_retry()
+        +_create_parser()* ResponseParser
+    }
+    class MultiStageStrategy {
+        <<abstract>>
+        +generate() Iterator [final]
+        +_plan_all()* list
+        +_execute_all()* Iterator
     }
     class TopicDrivenStrategy {
         +_run_planning()
@@ -106,7 +117,10 @@ classDiagram
     class SeedDrivenStrategy {
         +iter_prompts()
         +_build_crossover()
-        +_build_mutate()
+    }
+    class EvolInstructStrategy {
+        +_plan_all() list
+        +_execute_all() Iterator
     }
     class CompositeStrategy {
         +iter_prompts()
@@ -115,7 +129,23 @@ classDiagram
 
     GenerationStrategy <|-- TopicDrivenStrategy : Strategy
     GenerationStrategy <|-- SeedDrivenStrategy : Strategy
+    GenerationStrategy <|-- MultiStageStrategy : Strategy
     GenerationStrategy <|-- CompositeStrategy : Composite
+    MultiStageStrategy <|-- EvolInstructStrategy : Evol-Instruct
+
+    class ResponseParser {
+        <<interface>>
+        +parse() list~GenerationSample~
+    }
+    class JSONResponseParser {
+        +parse() list~GenerationSample~
+    }
+    class ResponseParsingStrategy {
+        <<mixin>>
+        -ResponseParser _parser
+        +_create_parser() ResponseParser
+    }
+    GenerationStrategy ..> ResponseParser : delegates
 
     class Pipeline {
         +run() GenerationStats
@@ -125,15 +155,9 @@ classDiagram
         <<abstract>>
         +process(ctx)*
     }
-    class GenerationStage {
-        +process()
-    }
-    class CleanStage {
-        +process()
-    }
-    class ScoreStage {
-        +process()
-    }
+    class GenerationStage { +process() }
+    class CleanStage { +process() }
+    class ScoreStage { +process() }
 
     Pipeline o-- PipelineStage : stages
     PipelineStage <|-- GenerationStage
@@ -142,14 +166,10 @@ classDiagram
 
     class Observer {
         <<abstract>>
-        +on_start()
-        +on_sample()
-        +on_complete()
+        +on_start() +on_sample() +on_complete()
     }
-    class LogObserver {
-    }
-    class StatisticsCollector {
-    }
+    class LogObserver {}
+    class StatisticsCollector {}
 
     Observer <|-- LogObserver
     Observer <|-- StatisticsCollector
@@ -160,21 +180,28 @@ classDiagram
         +validate() bool
         +set_next()
     }
-    class LengthValidator {
-        +_do_validate()
-    }
-    class TruncationValidator {
-        +_do_validate()
-    }
-    class DedupValidator {
-        +_do_validate()
-    }
+    class LengthValidator { +_do_validate() }
+    class TruncationValidator { +_do_validate() }
+    class DedupValidator { +_do_validate() }
 
     QualityValidator <|-- LengthValidator
     QualityValidator <|-- TruncationValidator
     QualityValidator <|-- DedupValidator
     QualityValidator --> QualityValidator : _next (Chain)
 ```
+
+### 核心模式说明
+
+| 模式 | 位置 | 说明 |
+|------|------|------|
+| **策略** | `GenerationStrategy` + 4 个子类 | 可替换的生成算法 |
+| **模板方法** | `GenerationStrategy.generate()` / `MultiStageStrategy.generate()` | 骨架固定，子类仅实现 hook |
+| **复合** | `CompositeStrategy` | 多策略加权组合 |
+| **责任链** | `QualityValidator` 链 | 长度 → 截断 → 去重 |
+| **观察者** | `Observer` → `StatisticsCollector` | 生成事件跟踪 |
+| **工厂** | `Registry` + `create_strategy()` | 按名称创建策略 |
+| **装饰器** | `RetryDecorator` | API 层透明重试 |
+| **解析器分离** | `ResponseParser` 类层次 | 响应解析从策略中解耦 |
 
 ## 管线流程
 
@@ -214,7 +241,6 @@ flowchart LR
     _scored.jsonl --> SFS["ScoreFilterStage"] --> _scored_filtered.jsonl
 ```
 
-
 ## 生成策略
 
 ### TopicDrivenStrategy（两阶段）
@@ -228,20 +254,17 @@ strategies:
       - topic: "Python 编程基础"
         knowledge: "语法、数据类型、控制流..."
     total_count: 100
-    max_samples_per_request: 5      # 每次 API 调用最多生成条数
-    execution_max_per_request: 10   # 每批次最多合并计划项数
+    max_samples_per_request: 5
+    execution_max_per_request: 10
 ```
 
 ### SeedDrivenStrategy
 基于种子示例（few-shot）模仿其风格与深度生成样本。支持进化算子（`evolution` 配置）：
 
 - **交叉（crossover）**：随机抽取两个种子 A/B，按 `crossover_mode` 生成新样本
-  - `instruction_output`：A 出指令 + B 出输出风格
-  - `compose`：合并 A、B 主题为复合任务
-- **变异（mutate）**：随机选一个种子，施加用户自定义的变异类型（改难度、换语气、加约束等）
-  - `mutation_types` 必须显式配置，每项定义 `name`/`prompt`/`values`（可选 `override_field`）
+- **变异（mutate）**：随机选一个种子，施加用户自定义的变异类型
 
-每次生成按 `crossover_rate` / `mutate_rate` 轮盘赌选择模式，剩余概率走默认 few-shot。详见 [config.md](config.md#evolution--交叉与变异)。
+详见 [config.md](config.md#seed_driven)。
 
 ```yaml
 strategies:
@@ -255,10 +278,37 @@ strategies:
         - name: difficulty
           values: [beginner, advanced]
           prompt: "Change the difficulty to '{value}'"
-        - name: tone
-          values: [formal, casual]
-          prompt: "Rewrite in a {value} tone"
 ```
+
+### EvolInstructStrategy（进化指令）
+迭代式指令进化（基于 WizardLM Evol-Instruct 论文），两阶段：
+
+```
+Phase 1 — 进化: seed ──round_1──→ v1 ──round_2──→ v2 ──round_N──→ vN
+Phase 2 — 回答: vN ──LLM──→ (vN, output)
+```
+
+每轮每个指令以 `depth_rate` 概率走**深度进化**（4 类算子：加约束、加深、具体化、推理链），另有 `branch_factor` 条**广度进化**（同域新指令）。进化结果经过长度/拒绝短语/重复性验证后才进入下一轮池。
+
+```yaml
+strategies:
+  - type: evol_instruct
+    seed_file: ./seeds.jsonl
+    max_rounds: 3
+    depth_rate: 0.7
+    branch_factor: 1
+    depth_mutations:
+      - name: add_constraint
+        prompt: "Add one or more specific constraints or requirements"
+      - name: deepen
+        prompt: "Increase the depth and breadth of the inquiry"
+      - name: concretize
+        prompt: "Replace general concepts with more specific concepts"
+      - name: increase_reasoning
+        prompt: "Request explicit multiple-step reasoning"
+```
+
+每条样本元数据携带完整进化链，详见 [config.md](config.md#evol_instruct)。
 
 ### CompositeStrategy
 加权合并多个策略，通过 `merge_generators` 交错输出。
@@ -281,66 +331,15 @@ stage_registry.register("translate", TranslateStage)
 Pipeline(config).set_stages("generate", "clean", "translate").run()
 ```
 
-## 配置结构
-
-```yaml
-api:
-  model: deepseek-v4-flash
-  api_key: "sk-..."
-  base_url: "https://api.deepseek.com"
-  lang: zh                    # 自动选择 _zh.j2 中文模板
-  concurrency: 8              # 并发数
-
-strategies:
-  - type: topic_driven
-    topics: [...]
-    total_count: 100
-
-cleaner:
-  dedup_strategy: minhash     # minhash | semantic | none
-  dedup_threshold: 0.88
-
-scoring:
-  enabled: true
-  dimensions:
-    - name: accuracy
-      max_score: 10
-
-output:
-  path: ./output.jsonl
-  format: alpaca              # alpaca | chatml | sharegpt
-```
-
-## 数据检查（view 命令）
-
-```powershell
-python -m alembic.cli view data.jsonl          # 文本统计
-python -m alembic.cli view data.jsonl -g       # 柱状图（长度、话题、策略）
-python -m alembic.cli view data.jsonl -q       # 质量 + 相似度（MinHash）
-python -m alembic.cli view data.jsonl -g -q    # 完整仪表盘
-python -m alembic.cli view data.jsonl -n 3     # 显示 3 条样本
-python -m alembic.cli view data.jsonl --json   # JSON 格式输出
-```
-
-仪表盘分区（平凡分区自动隐藏）：
-
-| 分区 | 内容 |
-|------|------|
-| DATA PROFILE | 总数、格式分布 |
-| TOPICS | 柱状图（>1 个话题时展示） |
-| LENGTH | 指令/输出长度直方图 + min/max/mean/p50 |
-| QUALITY `-q` | 词/字重复率、空字段检测 |
-| SIMILARITY `-q` | 最大成对 MinHash 相似度直方图、Top 相似样本对 |
-| SAMPLES `-n N` | 内联样本预览 |
-
 ## 并发与重试
 
-- **并发**：`ThreadPoolExecutor`，并发数由 `api.concurrency` 配置。适用于 topic_driven、seed_driven。
+- **并发**：`ThreadPoolExecutor`，并发数由 `api.concurrency` 配置。evol_instruct 另有独立 `evol_concurrency` 参数控制进化阶段的并发。
 - **重试**：统一使用 `retry_with_backoff(fn, RetryConfig)`，指数退避。应用于：
-  - API 层：`RetryDecorator` 包装 `BaseAPIClient`
-  - 策略层：`GenerationStrategy._call_with_retry`
-  - 规划层：`_plan_topic_with_retry`
-  - 评分层：`_score_one_safe`
+  - API 层：`RetryDecorator` 包装 `BaseAPIClient`（3 次）
+  - 策略层：`GenerationStrategy._call_with_retry`（3 次）
+  - 进化层：EvolInstruct 回答生成（3 次）
+  - 规划层：`TopicDriven._plan_slots_with_retry`（3 次）
+  - 评分层：`DatasetScorer._score`（3 次）
 
 ## 质量检查
 

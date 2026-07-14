@@ -50,24 +50,31 @@ python -m alembic.cli view output.jsonl -j
 
 ## 生成策略
 
-| 策略 | 适用场景 | 关键参数 |
-|------|----------|----------|
-| `topic_driven` | 明确领域覆盖需求，按主题/难度/题型分配 | `topics` + `total_count` |
-| `seed_driven` | 有少量高质量种子数据，扩增同风格样本 | `seed_file` + `example_num` + `target_count` |
-| `seed_driven` + `evolution` | 种子扩增 + 遗传算法式交叉/变异增强多样性 | `evolution.crossover_rate` + `evolution.mutation_types` |
+| 策略 | 变体 | 适用场景 | 关键参数 |
+|------|------|----------|----------|
+| `topic_driven` | 主题驱动 | 按主题+难度+题型生成 | `topics` + `total_count` |
+| `seed_driven` | 种子扩增 | 少量种子扩增同风格 | `seed_file` + `target_count` |
+| `seed_driven` + `evolution` | 遗传进化 | 种子 + 交叉/变异算子 | `evolution.crossover_rate` + `mutation_types` |
+| `evol_instruct` | 迭代进化 | 种子逐轮深度/广度变异 | `seed_file` + `max_rounds` |
 
-详细参数说明见 [docs/config.md](docs/config.md#生成策略)。
+- **`topic_driven`**：指定主题和维度，LLM 规划子主题和角度后分批生成
+- **`seed_driven`**：基于种子 few-shot 学习，可选遗传算子（交叉/变异）增强多样性
+- **`evol_instruct`**：WizardLM 式迭代进化，N 轮深度（加约束/加深/具体化/推理链）和广度变异使指令逐步复杂，再统一生成回答
+- **`CompositeStrategy`**：多策略按 `weight` 加权组合，`merge_generators` 交错输出
+
+详细参数说明见 [docs/config.md](docs/config.md#策略编排)。
 
 ## 核心功能
 
 ### 数据生成
 
-- 两种策略可独立或组合使用，按 `weight` 比例分配生成量
-- **多角度正交生成**：可配置任意多个维度自动正交组合，Jinja2 按比例均分，代码零改动
-- **种子进化算子**：`seed_driven` 支持 `evolution` 子配置，按概率执行交叉（合并两个种子）和变异（对种子施加自定义变换），`mutation_types` 完全用户自定义
-- 支持单轮（instruction/output）和多轮对话
+三种策略可独立或按 `weight` 比例组合使用：
 
-数据生成链路：`topics + knowledge`（手动指定）→ Planner LLM 生成 `sub_topic + angle` → Executor LLM 生成 `instruction + output`。每条输出 `metadata` 携带完整维度标签。
+- **`topic_driven`**：`topics + knowledge` → Planner LLM 规划 `sub_topic + angle` → Executor LLM 生成 `instruction + output`。支持任意多维度正交组合
+- **`seed_driven`**：按概率走交叉（合并两个种子）/ 变异（自定义算子）/ 默认 few-shot 三种模式
+- **`evol_instruct`**：两阶段——种子经 N 轮深度+广度迭代进化，再统一生成回答。元数据携带完整进化链
+
+支持单轮（instruction/output）和多轮对话。每条输出 `metadata` 携带策略、话题、维度标签。
 
 ### 数据清洗
 

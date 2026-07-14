@@ -1,0 +1,15 @@
+user: 指令：
+{{ instruction }}
+
+{% if require_reasoning %}
+请在 "reasoning" 字段中包含逐步推理过程。
+{% endif %}
+
+请为上述指令撰写回答。只输出纯JSON：
+{
+  "instruction": "指令原文",
+  "output": "你的回答"
+  {% if require_reasoning -%}
+  ,"reasoning": "逐步推理过程"
+  {% endif %}
+}

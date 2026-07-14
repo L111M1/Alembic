@@ -1,10 +1,10 @@
 import abc
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Optional
 
 from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
+from alembic.core.parser import JSONResponseParser, ResponseParser
 from alembic.core.types import GenerationSample
 
 logger = logging.getLogger(__name__)
@@ -13,6 +13,15 @@ _MAX_RETRIES = 3
 
 
 class GenerationStrategy(abc.ABC):
+    """Base for all generation strategies.
+
+    Subclasses define :meth:`iter_prompts` which yields ``(prompt_id, messages)``
+    pairs; the base class handles API dispatch, retry, concurrency, and parsing.
+
+    Strategies with a multi-phase workflow (plan → execute) should instead
+    extend :class:`MultiStageStrategy`.
+    """
+
     def __init__(self, api: BaseAPIClient, params: dict):
         self._api = api
         self._params = params
@@ -20,6 +29,15 @@ class GenerationStrategy(abc.ABC):
         self._lang = params.get("lang", "en")
         self._concurrency = max(1, int(params.get("concurrency", 1)))
         self._json_mode = bool(params.get("json_mode", True))
+        self._parser = self._create_parser()
+
+    # ── parser hook ────────────────────────────────────────────────────
+
+    def _create_parser(self) -> ResponseParser:
+        """Override to inject a custom response parser."""
+        return JSONResponseParser()
+
+    # ── prompt iteration (subclass responsibility) ─────────────────────
 
     @abc.abstractmethod
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
@@ -28,6 +46,8 @@ class GenerationStrategy(abc.ABC):
     def _build_metadata(self, prompt_id: str) -> dict:
         """Override to attach metadata (topic, strategy, etc.) to samples."""
         return {}
+
+    # ── generate ───────────────────────────────────────────────────────
 
     def generate(self) -> Iterator[GenerationSample]:
         if self._concurrency <= 1:
@@ -75,8 +95,27 @@ class GenerationStrategy(abc.ABC):
                     else:
                         logger.warning(f"[{self._name}] empty instruction/output, skipping")
 
-    def _call_and_parse(self, messages: list[dict], metadata: dict = None) -> list[GenerationSample]:
-        raw = self._call_api(messages)
+    @abc.abstractmethod
+    def estimated_count(self) -> int: ...
+
+    # ── API dispatch & parsing ─────────────────────────────────────────
+
+    def _call_api(self, messages: list[dict], use_json_mode: bool = None,
+                  temperature: float = None, max_tokens: int = None) -> str:
+        if temperature is None:
+            temperature = self._params.get("temperature", 0.8)
+        if max_tokens is None:
+            max_tokens = self._params.get("max_tokens", 2048)
+        kwargs = {}
+        if use_json_mode is None:
+            use_json_mode = self._json_mode
+        if use_json_mode and self._api.supports_json_mode():
+            kwargs["response_format"] = {"type": "json_object"}
+        return self._api.call(messages, temperature=temperature, max_tokens=max_tokens, **kwargs)
+
+    def _call_and_parse(self, messages: list[dict], metadata: dict = None,
+                        temperature: float = None, max_tokens: int = None) -> list[GenerationSample]:
+        raw = self._call_api(messages, temperature=temperature, max_tokens=max_tokens)
         return self._parse(response_text=raw, metadata=metadata)
 
     def _call_with_retry(
@@ -92,58 +131,38 @@ class GenerationStrategy(abc.ABC):
             logger.warning(str(e))
             return None
 
-    @abc.abstractmethod
-    def estimated_count(self) -> int: ...
-
-    def _call_api(self, messages: list[dict], use_json_mode: bool = None) -> str:
-        temperature = self._params.get("temperature", 0.8)
-        max_tokens = self._params.get("max_tokens", 2048)
-        kwargs = {}
-        if use_json_mode is None:
-            use_json_mode = self._json_mode
-        if use_json_mode and self._api.supports_json_mode():
-            kwargs["response_format"] = {"type": "json_object"}
-        return self._api.call(messages, temperature=temperature, max_tokens=max_tokens, **kwargs)
+    # ── backwards-compatible alias so subclasses that override _parse still work ──
 
     def _parse(self, response_text: str, metadata: dict = None) -> list[GenerationSample]:
-        text = response_text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [line for line in lines if not line.strip().startswith("```")]
-            text = "\n".join(lines).strip()
-        data = json.loads(text)
+        return self._parser.parse(response_text=response_text, metadata=metadata)
 
-        if isinstance(data, list):
-            results = []
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                if "messages" in item:
-                    sample = GenerationSample(messages=item["messages"])
-                    if metadata:
-                        sample.metadata = dict(metadata)
-                    results.append(sample)
-                else:
-                    instruction = item.get("instruction", "").strip()
-                    output = item.get("output", "").strip()
-                    reasoning = item.get("reasoning", "").strip()
-                    sample = GenerationSample(instruction=instruction, output=output, reasoning=reasoning)
-                    if metadata:
-                        sample.metadata = dict(metadata)
-                    results.append(sample)
-            return results
 
-        if "messages" in data:
-            messages = data["messages"]
-            sample = GenerationSample(messages=messages)
-            if metadata:
-                sample.metadata = metadata
-            return [sample]
+class MultiStageStrategy(GenerationStrategy):
+    """Base for strategies with separate planning and execution phases.
 
-        instruction = data.get("instruction", "").strip()
-        output = data.get("output", "").strip()
-        reasoning = data.get("reasoning", "").strip()
-        sample = GenerationSample(instruction=instruction, output=output, reasoning=reasoning)
-        if metadata:
-            sample.metadata = metadata
-        return [sample]
+    Instead of overriding :meth:`generate` (which breaks the base class template
+    method), subclasses implement:
+
+    * :meth:`_plan_all` — produce a list of plan items
+    * :meth:`_execute_all` — consume plan items and yield samples
+
+    Examples: :class:`EvolInstructStrategy` (evolve → answer),
+    :class:`TopicDrivenStrategy` (plan topics → generate samples).
+    """
+
+    def generate(self) -> Iterator[GenerationSample]:
+        items = self._plan_all()
+        if not items:
+            return
+        yield from self._execute_all(items)
+
+    def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
+        return iter([])
+
+    @abc.abstractmethod
+    def _plan_all(self) -> list:
+        """Produce all plan items (e.g. evolved instructions, planned slots)."""
+
+    @abc.abstractmethod
+    def _execute_all(self, items: list) -> Iterator[GenerationSample]:
+        """Execute every plan item, yielding 0+ samples per item."""
