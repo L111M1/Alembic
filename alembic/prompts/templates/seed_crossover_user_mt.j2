@@ -14,6 +14,7 @@ Question type: {{ question_type }}
 Generate one new multi-turn conversation (2-4 exchanges) that follows the crossover directive. Output pure JSON only, no extra text:
 {
   "messages": [
+    {"role": "system", "content": "system prompt"},
     {"role": "user", "content": "new user question"},
     {"role": "assistant", "content": "corresponding answer"},
     {"role": "user", "content": "follow-up question"},
