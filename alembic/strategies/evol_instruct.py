@@ -3,6 +3,8 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator, Optional
 
+from tqdm import tqdm
+
 from alembic.api.base import BaseAPIClient, RetryConfig, retry_with_backoff
 from alembic.core.types import GenerationSample
 from alembic.prompts.builder import PromptBuilder, load_seeds
@@ -98,15 +100,15 @@ class EvolInstructStrategy(MultiStageStrategy):
         ]
         all_evolved: list[tuple[str, dict]] = []
 
+        round_bar = tqdm(total=self._max_rounds, desc="Evolving", unit="round", leave=False)
         for round_num in range(1, self._max_rounds + 1):
-            logger.info(
-                "Evolution round %d/%d, pool=%d, concurrency=%d",
-                round_num, self._max_rounds, len(pool), self._evol_concurrency,
-            )
+            round_bar.set_postfix(pool=len(pool))
             next_pool = self._run_evolution_round(pool, round_num)
             pool = next_pool
             self._log_pool_breakdown(pool, round_num)
             all_evolved.extend(pool)
+            round_bar.update(1)
+        round_bar.close()
 
         if not all_evolved:
             logger.warning("Evolution produced no valid instructions, falling back to seeds")
@@ -146,7 +148,7 @@ class EvolInstructStrategy(MultiStageStrategy):
 
     def _evolve_pool_sequential(self, pool, round_num):
         next_pool = []
-        for inst, meta in pool:
+        for inst, meta in tqdm(pool, desc=f"  round {round_num}", unit="item", leave=False):
             items = self._evolve_one(inst, meta, round_num)
             next_pool.extend(items)
         return next_pool
@@ -158,6 +160,7 @@ class EvolInstructStrategy(MultiStageStrategy):
             for inst, meta in pool:
                 f = executor.submit(self._evolve_one, inst, meta, round_num)
                 futures[f] = (inst, meta)
+            pbar = tqdm(total=len(futures), desc=f"  round {round_num}", unit="item", leave=False)
             for f in as_completed(futures):
                 try:
                     items = f.result()
@@ -165,6 +168,8 @@ class EvolInstructStrategy(MultiStageStrategy):
                 except Exception as e:
                     inst, meta = futures[f]
                     logger.warning("Evolution failed for '%s...': %s", inst[:60], e)
+                pbar.update(1)
+            pbar.close()
         return next_pool
 
     def _evolve_one(
@@ -267,35 +272,67 @@ class EvolInstructStrategy(MultiStageStrategy):
     # ── Phase 2: answer generation ──────────────────────────────────
 
     def _generate_outputs(self, evolved_items) -> Iterator[GenerationSample]:
+        if self._concurrency <= 1:
+            yield from self._generate_outputs_sequential(evolved_items)
+        else:
+            yield from self._generate_outputs_parallel(evolved_items)
+
+    def _generate_outputs_sequential(self, evolved_items) -> Iterator[GenerationSample]:
         for i, (inst, meta) in enumerate(evolved_items):
-            builder = PromptBuilder(lang=self._lang)
-            builder.from_template("evol_answer_system.j2")
-            builder.from_template(
-                "evol_answer_user.j2",
-                instruction=inst,
-                require_reasoning=self._require_reasoning,
+            samples = self._generate_one_answer(i, inst, meta)
+            if samples:
+                yield from samples
+
+    def _generate_outputs_parallel(self, evolved_items) -> Iterator[GenerationSample]:
+        """Sliding-window parallel generation — never submits more than
+        ``concurrency`` pending tasks at once, so the pipeline can stop early
+        without wasted API calls."""
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+        with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+            items = list(enumerate(evolved_items))
+            fs: set = set()
+            idx = 0
+            while idx < len(items) or fs:
+                while len(fs) < self._concurrency and idx < len(items):
+                    i, (inst, meta) = items[idx]
+                    fs.add(executor.submit(self._generate_one_answer, i, inst, meta))
+                    idx += 1
+                if not fs:
+                    break
+                done, fs = wait(fs, return_when=FIRST_COMPLETED)
+                for f in done:
+                    try:
+                        samples = f.result()
+                        if samples:
+                            yield from samples
+                    except Exception as e:
+                        logger.warning("Answer generation failed: %s", e)
+
+    def _generate_one_answer(self, idx: int, instruction: str, meta: dict) -> Optional[list[GenerationSample]]:
+        builder = PromptBuilder(lang=self._lang)
+        builder.from_template("evol_answer_system.j2")
+        builder.from_template(
+            "evol_answer_user.j2",
+            instruction=instruction,
+            require_reasoning=self._require_reasoning,
+        )
+        messages = builder.build()
+        try:
+            samples = retry_with_backoff(
+                lambda: self._call_and_parse(
+                    messages, dict(meta),
+                    temperature=self._answer_temperature,
+                    max_tokens=self._answer_max_tokens,
+                ),
+                RetryConfig(max_retries=3),
+                f"Evol answer {idx}",
             )
-            messages = builder.build()
-
-            try:
-                samples = retry_with_backoff(
-                    lambda: self._call_and_parse(
-                        messages, dict(meta),
-                        temperature=self._answer_temperature,
-                        max_tokens=self._answer_max_tokens,
-                    ),
-                    RetryConfig(max_retries=3),
-                    f"Evol answer {i}",
-                )
-            except RuntimeError as e:
-                logger.warning("Answer generation failed for evolution item %d: %s", i, e)
-                continue
-
-            if samples is None:
-                continue
-            for s in samples:
-                if (s.instruction and s.output) or s.is_multi_turn:
-                    yield s
+        except RuntimeError as e:
+            logger.warning("Answer generation failed for evolution item %d: %s", idx, e)
+            return None
+        if samples is None:
+            return None
+        return [s for s in samples if (s.instruction and s.output) or s.is_multi_turn]
 
     def estimated_count(self) -> int:
         base = len(self._seeds)
