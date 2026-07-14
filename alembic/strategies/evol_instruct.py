@@ -25,11 +25,13 @@ class EvolInstructStrategy(MultiStageStrategy):
     round builds on the previous.
     """
 
+    # Five WizardLM (Evol-Instruct) depth evolution operators.
     _DEFAULT_DEPTH_MUTATIONS = [
         {"name": "add_constraint", "prompt": "Add one or more specific constraints or requirements to the instruction"},
         {"name": "deepen", "prompt": "Increase the depth and breadth of the inquiry"},
         {"name": "concretize", "prompt": "Replace general concepts with more specific concepts"},
         {"name": "increase_reasoning", "prompt": "Request explicit multiple-step reasoning"},
+        {"name": "complicate_input", "prompt": "Add additional parameters, data, or context to make the input more complex"},
     ]
 
     _REFUSAL_PHRASES = [
