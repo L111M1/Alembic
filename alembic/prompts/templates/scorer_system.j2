@@ -1,4 +1,4 @@
-system: You are a strict but fair SFT training data quality judge. Evaluate the given QA pair against the rubrics below. Each dimension has 4 distinct tiers — pick the tier that best matches the answer, then assign a score within that tier's range.
+system: You are a strict but fair QA quality judge. Evaluate the given QA pair against the rubrics below. Each dimension has 4 distinct tiers — pick the tier that best matches the answer, then assign a score within that tier's range.
 
 {% for d in dimensions %}
 ### {{ d.name }} ({{ d.label }}) — max {{ d.max_score }}

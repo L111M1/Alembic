@@ -3,22 +3,23 @@ from dataclasses import dataclass, field
 
 
 DEFAULT_TOPICS = {
-    "cs": "计算机科学",
-    "ai": "人工智能",
-    "math": "数学",
-    "science": "自然科学",
-    "engineering": "工程技术",
-    "social": "社会科学",
-    "humanities": "人文艺术",
-    "health": "医学健康",
-    "business": "商业管理",
-    "education": "教育学习",
+    "cs": {"en": "Computer Science", "zh": "计算机科学"},
+    "ai": {"en": "Artificial Intelligence", "zh": "人工智能"},
+    "math": {"en": "Mathematics", "zh": "数学"},
+    "science": {"en": "Natural Science", "zh": "自然科学"},
+    "engineering": {"en": "Engineering", "zh": "工程技术"},
+    "social": {"en": "Social Science", "zh": "社会科学"},
+    "humanities": {"en": "Humanities & Arts", "zh": "人文艺术"},
+    "health": {"en": "Medicine & Health", "zh": "医学健康"},
+    "business": {"en": "Business Management", "zh": "商业管理"},
+    "education": {"en": "Education", "zh": "教育学习"},
 }
 
 
-def random_topic() -> str:
+def random_topic(lang: str = "en") -> str:
     """Pick a random default topic as fallback when none is specified."""
-    return random.choice(list(DEFAULT_TOPICS))
+    key = random.choice(list(DEFAULT_TOPICS))
+    return DEFAULT_TOPICS[key].get(lang, DEFAULT_TOPICS[key]["en"])
 
 
 @dataclass
