@@ -117,10 +117,17 @@ class DatasetScorer:
         return results
 
     def _score_one_safe(self, api: BaseAPIClient, sample: dict, index: int) -> Optional[dict]:
+        rt = self._config.retry
+        rc = RetryConfig(
+            max_retries=rt.get("max_retries", 3),
+            initial_delay=rt.get("initial_delay", 1.0),
+            backoff_multiplier=rt.get("backoff_multiplier", 2.0),
+            max_delay=rt.get("max_delay", 30.0),
+        )
         try:
             return retry_with_backoff(
                 lambda: self._score_one(api, sample, index),
-                RetryConfig(max_retries=2),
+                rc,
                 f"Score sample {index}",
             )
         except RuntimeError as e:
