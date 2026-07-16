@@ -182,7 +182,7 @@ class TestSeedDriven:
         prompts = list(strategy.iter_prompts())
         for pid, messages in prompts:
             user = messages[-1]["content"]
-            assert "Combine the topics" in user
+            assert "core concept" in user
 
     def test_crossover_falls_back_with_one_seed(self, fake_api, seed_jsonl, tmp_path):
         one_seed = tmp_path / "one.jsonl"

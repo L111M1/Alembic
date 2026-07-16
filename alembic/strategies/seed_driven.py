@@ -111,26 +111,27 @@ class SeedDrivenStrategy(GenerationStrategy):
             logger.warning("Crossover requires >=2 seeds, falling back to default")
             return None
         a, b = random.sample(self._seeds, 2)
+        ta = self._resolve_topic(a.topic, self._lang) if a.topic else ""
+        tb = self._resolve_topic(b.topic, self._lang) if b.topic else ""
         noun = "Conversation" if self._multi_turn else "Sample"
-        ex_a = self._format_seed(a, f"{noun} A")
-        ex_b = self._format_seed(b, f"{noun} B")
+        ex_a = self._format_seed(a, f"{noun} A (domain: {ta})")
+        ex_b = self._format_seed(b, f"{noun} B (domain: {tb})")
         return f"{ex_a}\n\n{ex_b}", self._crossover_directive(noun), a.topic
 
     def _crossover_directive(self, noun: str) -> str:
-        if self._crossover_mode == "compose":
-            return (
-                f"Combine the topics of {noun} A and {noun} B into a single composite "
-                f"{'multi-turn conversation that weaves together themes from both' if self._multi_turn else 'instruction; the output should address both topics'}."
-            )
         if self._multi_turn:
             return (
-                f"Open the conversation with a question similar to {noun} A; let the "
-                f"assistant's response style and follow-up pattern follow {noun} B."
+                f"Identify the core theme from {noun} A and the core theme from {noun} B. "
+                f"Create a multi-turn conversation that bridges both domains: "
+                f"the user asks a question that requires connecting the two concepts, "
+                f"and the assistant responds with a synthesis that draws on both."
             )
         return (
-            f"Use {noun} A as the instruction source (the user request) and {noun} B as "
-            f"the output style reference; generate a new sample whose instruction solves "
-            f"a problem similar to A and whose output is written in the style of B."
+            f"Identify the core concept from {noun} A and the core concept from {noun} B. "
+            f"Create a new sample that bridges both domains:\n"
+            f"- The instruction should require understanding or applying both concepts\n"
+            f"- The output should compare, contrast, or synthesize the two, not just define each\n"
+            f"- The result must be substantive and show meaningful cross-domain connection"
         )
 
     @staticmethod
