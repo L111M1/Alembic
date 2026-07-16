@@ -85,8 +85,8 @@ class DatasetScorer:
     def _score_sequential(self, api: BaseAPIClient, samples: list[dict]) -> list[dict]:
         results = []
         for i, sample in enumerate(samples):
-            scored = self._score_one(api, sample, i)
-            if scored:
+            scored = self._score_one_safe(api, sample, i)
+            if scored and "scores" in scored:
                 results.append(scored)
                 self._scored_count += 1
             else:
@@ -159,9 +159,12 @@ class DatasetScorer:
         raw = api.call(messages, temperature=temp, max_tokens=max_tok)
         scores = self._parse_scores(raw, dims)
 
+        if not scores:
+            raise ValueError(f"Failed to parse judge response as JSON: {raw[:200]}")
+
         result = dict(sample)
         result["scores"] = scores
-        result["total_score"] = sum(scores.values()) if scores else 0
+        result["total_score"] = sum(scores.values())
         return result
 
     def _parse_scores(self, raw: str, dimensions: list[dict]) -> dict:
