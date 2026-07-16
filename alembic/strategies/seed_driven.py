@@ -23,6 +23,7 @@ class SeedDrivenStrategy(GenerationStrategy):
         self._example_num = max(1, min(int(params.get("example_num", 3)), len(self._seeds)))
         self._target_count = int(params.get("target_count", 10))
         self._multi_turn = bool(params.get("multi_turn", False))
+        self._topic_lookup: dict[str, str] = {}
 
         evo = params.get("evolution") or {}
         self._crossover_rate = self._clamp(float(evo.get("crossover_rate", 0.0)))
@@ -40,8 +41,15 @@ class SeedDrivenStrategy(GenerationStrategy):
                 self._mutate_rate,
             )
 
+    @staticmethod
+    def _resolve_topic(code: str, lang: str = "en") -> str:
+        from alembic.core.types import DEFAULT_TOPICS
+        if code in DEFAULT_TOPICS:
+            return DEFAULT_TOPICS[code].get(lang, DEFAULT_TOPICS[code]["en"])
+        return code
+
     def _get_topic(self) -> str:
-        return self._fixed_topic or random_topic()
+        return self._fixed_topic or random_topic(self._lang)
 
     def _resolve_mutations(self, raw_types: Optional[list]) -> list[dict]:
         if not raw_types:
@@ -98,7 +106,7 @@ class SeedDrivenStrategy(GenerationStrategy):
             return "mutate"
         return "default"
 
-    def _build_crossover(self) -> Optional[tuple[str, str]]:
+    def _build_crossover(self) -> Optional[tuple[str, str, str]]:
         if len(self._seeds) < 2:
             logger.warning("Crossover requires >=2 seeds, falling back to default")
             return None
@@ -106,7 +114,7 @@ class SeedDrivenStrategy(GenerationStrategy):
         noun = "Conversation" if self._multi_turn else "Sample"
         ex_a = self._format_seed(a, f"{noun} A")
         ex_b = self._format_seed(b, f"{noun} B")
-        return f"{ex_a}\n\n{ex_b}", self._crossover_directive(noun)
+        return f"{ex_a}\n\n{ex_b}", self._crossover_directive(noun), a.topic
 
     def _crossover_directive(self, noun: str) -> str:
         if self._crossover_mode == "compose":
@@ -138,7 +146,7 @@ class SeedDrivenStrategy(GenerationStrategy):
                 return d
         return defs[-1]
 
-    def _build_mutate(self) -> Optional[tuple[str, dict, Optional[str]]]:
+    def _build_mutate(self) -> Optional[tuple[str, dict, Optional[str], Optional[str]]]:
         if not self._seeds or not self._mutation_defs:
             return None
         mdef = self._weighted_choice(self._mutation_defs)
@@ -162,7 +170,7 @@ class SeedDrivenStrategy(GenerationStrategy):
         seed = random.choice(self._seeds)
         label = "Reference conversation" if self._multi_turn else "Reference sample"
         template_vars["examples"] = self._format_seed(seed, label)
-        return name, template_vars, chosen_value
+        return name, template_vars, chosen_value, seed.topic
 
     def iter_prompts(self) -> Iterator[tuple[str, list[dict]]]:
         if not self._seeds or self._example_num == 0:
@@ -176,33 +184,36 @@ class SeedDrivenStrategy(GenerationStrategy):
                 if built is None:
                     mode = "default"
                 else:
-                    examples, directive = built
+                    examples, directive, seed_topic = built
                     builder = PromptBuilder(lang=self._lang)
-                    t = self._get_topic()
+                    t = self._get_topic() if self._fixed_topic else (self._resolve_topic(seed_topic, self._lang) if seed_topic else random_topic(self._lang))
                     builder.from_template(f"seed_system{suffix}.j2", topic=t)
                     builder.from_template(
                         f"seed_crossover_user{suffix}.j2",
                         examples=examples,
                         crossover_directive=directive,
                     )
-                    yield (f"seed_crossover:{i}", builder.build())
+                    pid = f"seed_crossover:{i}"
+                    self._topic_lookup[pid] = t
+                    yield (pid, builder.build())
                     continue
             if mode == "mutate":
                 built = self._build_mutate()
                 if built is None:
                     mode = "default"
                 else:
-                    mname, template_vars, chosen_value = built
+                    mname, template_vars, chosen_value, seed_topic = built
                     pid = f"seed_mutate:{i}:{mname}"
                     if chosen_value:
                         pid += f":{chosen_value}"
                     builder = PromptBuilder(lang=self._lang)
-                    t = self._get_topic()
+                    t = self._get_topic() if self._fixed_topic else (self._resolve_topic(seed_topic, self._lang) if seed_topic else random_topic(self._lang))
                     builder.from_template(f"seed_system{suffix}.j2", topic=t)
                     builder.from_template(
                         f"seed_mutate_user{suffix}.j2",
                         **template_vars,
                     )
+                    self._topic_lookup[pid] = t
                     yield (pid, builder.build())
                     continue
             chosen = random.sample(self._seeds, min(self._example_num, len(self._seeds)))
@@ -214,21 +225,22 @@ class SeedDrivenStrategy(GenerationStrategy):
                 else:
                     examples_text_parts.append(f"Example {j}:\n  instruction: {seed.instruction}\n  output: {seed.output}")
             examples_text = "\n\n".join(examples_text_parts)
-            t = self._get_topic()
+            t = self._get_topic() if self._fixed_topic else (self._resolve_topic(chosen[0].topic, self._lang) if chosen and chosen[0].topic else random_topic(self._lang))
             builder = PromptBuilder(lang=self._lang)
             builder.from_template(f"seed_system{suffix}.j2", topic=t)
             builder.from_template(f"seed_user{suffix}.j2", examples=examples_text)
-            yield (f"seed:{i}", builder.build())
+            pid = f"seed:{i}"
+            self._topic_lookup[pid] = t
+            yield (pid, builder.build())
 
     def _build_metadata(self, prompt_id: str) -> dict:
-        meta = {"strategy": "seed_driven", "topic": self._get_topic()}
+        meta = {"strategy": "seed_driven", "topic": self._topic_lookup.get(prompt_id, random_topic())}
         if prompt_id.startswith("seed_crossover:"):
             meta["evolution"] = "crossover"
             meta["crossover_mode"] = self._crossover_mode
         elif prompt_id.startswith("seed_mutate:"):
             meta["evolution"] = "mutate"
             parts = prompt_id.split(":")
-            # parts: ["seed_mutate", idx, type_name, ?value]
             if len(parts) >= 3:
                 meta["mutation_type"] = parts[2]
             if len(parts) >= 4:
