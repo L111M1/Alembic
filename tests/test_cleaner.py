@@ -68,3 +68,39 @@ class TestCleaner:
             results = [json.loads(line) for line in f if line.strip()]
         assert results[0]["instruction"] == "what is python"
         assert "messages" in results[1]
+
+    def test_clean_rejects_low_ngram_diversity(self, temp_jsonl):
+        """Repetitive output with low char n-gram diversity should be dropped."""
+        path = temp_jsonl([
+            json.dumps({"instruction": "tell me about cats", "output": " ".join(["the cat sat"] * 30)}),
+            json.dumps({"instruction": "explain python", "output": "Python is a versatile high-level programming language with clean syntax."}),
+        ])
+        out = path.replace(".jsonl", "_cleaned.jsonl")
+
+        cfg = CleanerConfig(
+            output_min_len=10,
+            minhash_dedup=False,
+            min_ngram_diversity=0.3,
+            ngram_diversity_n=3,
+            ngram_diversity_unit="char",
+        )
+        cleaner = DatasetCleaner(cfg)
+        kept, dropped = cleaner.clean_file(path, out)
+        assert kept == 1
+        assert dropped == 1
+
+    def test_clean_keeps_high_ngram_diversity(self, temp_jsonl):
+        """Diverse output should pass even with a strict-ish threshold."""
+        path = temp_jsonl([
+            json.dumps({"instruction": "explain recursion", "output": "Recursion is a method where a function calls itself to solve smaller instances of a problem until reaching a base case."}),
+        ])
+        out = path.replace(".jsonl", "_cleaned.jsonl")
+
+        cfg = CleanerConfig(
+            output_min_len=10,
+            minhash_dedup=False,
+            min_ngram_diversity=0.5,
+        )
+        cleaner = DatasetCleaner(cfg)
+        kept, _ = cleaner.clean_file(path, out)
+        assert kept == 1

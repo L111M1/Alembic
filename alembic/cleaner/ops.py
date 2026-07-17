@@ -51,6 +51,36 @@ def char_repetition_ratio(text: str, min_len: int = 5) -> float:
     return max_run / len(text)
 
 
+def ngram_diversity(text: str, n: int = 3, unit: str = "char") -> float:
+    """N-gram diversity ratio: unique n-grams / total n-grams.
+
+    A high ratio means the text uses a rich variety of n-grams (good).
+    A low ratio means the text is repetitive / templated (bad).
+    Returns 1.0 for texts shorter than ``n`` units (trivially diverse).
+
+    Args:
+        text: Input text.
+        n: N-gram size (default 3, following CCNet / GPT-3 practice).
+        unit: ``"char"`` for character n-grams (default, catches phrase
+            repetition like "the cat the cat the cat"), or ``"word"`` for
+            word n-grams (catches sentence-level repetition).
+    """
+    text = text.strip()
+    if unit == "word":
+        tokens = text.lower().split()
+        if len(tokens) < n:
+            return 1.0
+        ngrams = [tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)]
+    else:
+        chars = text.lower()
+        if len(chars) < n:
+            return 1.0
+        ngrams = [chars[i:i + n] for i in range(len(chars) - n + 1)]
+    if not ngrams:
+        return 1.0
+    return len(set(ngrams)) / len(ngrams)
+
+
 def tokenize_ngrams(text: str, n: int = 3) -> list[str]:
     chars = text.strip().lower()
     if len(chars) < n:

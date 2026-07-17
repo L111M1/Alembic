@@ -11,6 +11,7 @@ import abc
 
 from alembic.cleaner.ops import (
     char_repetition_ratio,
+    ngram_diversity,
     special_char_ratio,
     word_repetition_ratio,
 )
@@ -62,6 +63,23 @@ class RatioRule(QualityRule):
         return True
 
 
+class NgramDiversityRule(QualityRule):
+    """Reject samples whose output n-gram diversity falls below a threshold.
+
+    Low n-gram diversity signals repetitive / templated text that offers
+    little training signal (e.g. \"the cat the cat the cat\"). This is
+    standard practice in CCNet / GPT-3 data pipelines.
+    """
+
+    def __init__(self, min_diversity: float, n: int = 3, unit: str = "char"):
+        self._min_diversity = min_diversity
+        self._n = n
+        self._unit = unit
+
+    def check(self, inst: str, out: str) -> bool:
+        return ngram_diversity(out, n=self._n, unit=self._unit) >= self._min_diversity
+
+
 class QualityRuleSet:
     """A short-circuiting conjunction of :class:`QualityRule` instances."""
 
@@ -98,5 +116,10 @@ class QualityRuleSet:
                 config.max_special_char_ratio,
                 config.max_word_repetition_ratio,
                 config.max_char_repetition_ratio,
+            ),
+            NgramDiversityRule(
+                config.min_ngram_diversity,
+                n=config.ngram_diversity_n,
+                unit=config.ngram_diversity_unit,
             ),
         ])

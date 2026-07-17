@@ -48,6 +48,9 @@ class CleanerConfig:
     max_special_char_ratio: float = 0.3
     max_word_repetition_ratio: float = 0.5
     max_char_repetition_ratio: float = 0.5
+    min_ngram_diversity: float = 0.2
+    ngram_diversity_n: int = 3
+    ngram_diversity_unit: str = "char"
     minhash_dedup: bool = True
     minhash_threshold: float = 0.7
     minhash_num_perm: int = 128
@@ -142,6 +145,9 @@ class AppConfig:
             max_special_char_ratio=float(cleaner_data.get("max_special_char_ratio", 0.3)),
             max_word_repetition_ratio=float(cleaner_data.get("max_word_repetition_ratio", 0.5)),
             max_char_repetition_ratio=float(cleaner_data.get("max_char_repetition_ratio", 0.5)),
+            min_ngram_diversity=float(cleaner_data.get("min_ngram_diversity", 0.2)),
+            ngram_diversity_n=int(cleaner_data.get("ngram_diversity_n", 3)),
+            ngram_diversity_unit=str(cleaner_data.get("ngram_diversity_unit", "char")),
             minhash_dedup=cleaner_data.get("minhash_dedup", True),
             minhash_threshold=float(cleaner_data.get("minhash_threshold", 0.7)),
             minhash_num_perm=int(cleaner_data.get("minhash_num_perm", 128)),
