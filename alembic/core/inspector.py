@@ -228,29 +228,54 @@ class DatasetInspector:
 
         return report
 
-    def analyze_similarity(self, threshold: float = 0.7) -> dict:
-        """Compute MinHash pairwise similarity distribution."""
+    def analyze_similarity(self, threshold: float = 0.7, num_perm: int = 128, bands: int = 32) -> dict:
+        """Compute MinHash pairwise similarity distribution via LSH."""
         self._sim_threshold = threshold
         texts = self._sample_texts
         n = len(texts)
         if n < 2:
             self._max_sims = []
+            self._similar_pairs = []
             return {"count": n, "near_duplicates": 0, "threshold": threshold}
 
-        num_perm = 128
+        rows = num_perm // bands
+        if rows == 0:
+            rows = 1
+            bands = num_perm
+
         signatures = [minhash_signature(tokenize_ngrams(t), num_perm) for t in texts]
         sign_arr = np.array(signatures, dtype=np.uint64)
 
-        self._max_sims = []
+        # LSH: hash each band into buckets
+        buckets: dict[tuple[int, int], list[int]] = {}
+        for doc_idx in range(n):
+            sig = sign_arr[doc_idx]
+            for band_idx in range(bands):
+                start = band_idx * rows
+                band_values = hash(tuple(sig[start:start + rows]))
+                buckets.setdefault((band_idx, band_values), []).append(doc_idx)
+
+        # Deduplicated candidate pairs from colliding buckets
+        candidate_pairs: set[tuple[int, int]] = set()
+        for bucket in buckets.values():
+            if len(bucket) <= 1:
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    a, b = bucket[i], bucket[j]
+                    candidate_pairs.add((a, b) if a < b else (b, a))
+
+        # Exact similarity for candidates
+        self._max_sims = [0.0] * n
         self._similar_pairs = []
-        for i in range(n):
-            matches = np.sum(sign_arr[i] == sign_arr[i + 1:], axis=1)
-            sims = matches.astype(np.float64) / num_perm
-            for j_offset, sim in enumerate(sims):
-                s = float(sim)
-                self._similar_pairs.append((i, i + 1 + j_offset, s))
-            if len(sims) > 0:
-                self._max_sims.append(float(np.max(sims)))
+        for i, j in candidate_pairs:
+            matches = float(np.sum(sign_arr[i] == sign_arr[j]))
+            s = matches / num_perm
+            self._similar_pairs.append((i, j, s))
+            if s > self._max_sims[i]:
+                self._max_sims[i] = s
+            if s > self._max_sims[j]:
+                self._max_sims[j] = s
 
         self._similar_pairs.sort(key=lambda x: -x[2])
 
