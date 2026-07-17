@@ -21,14 +21,18 @@ class OpenAICompatibleClient(BaseAPIClient):
         self._model = model
         key = api_key or os.environ.get("API_KEY", "")
         url = base_url or os.environ.get("BASE_URL", "") or None
-        # Some proxies (e.g. Cloudflare fronted endpoints like inferknock.ai)
-        # aggressively close idle keep-alive connections, causing
-        # "[SSL: UNEXPECTED_EOF_WHILE_READING]" when httpx reuses them.
-        # A dedicated httpx client with keep-alive disabled sidesteps this.
+        # Use a connection pool with short keep-alive expiry.
+        # Cloudflare fronted endpoints (e.g. inferknock.ai) close idle
+        # connections after ~60s; setting keepalive_expiry below that
+        # ensures we proactively retire stale connections before the server
+        # does, avoiding "[SSL: UNEXPECTED_EOF_WHILE_READING]" errors.
         self._http_client = httpx.Client(
             timeout=timeout,
-            headers={"Connection": "close"},
-            limits=httpx.Limits(max_keepalive_connections=0),
+            limits=httpx.Limits(
+                max_connections=128,
+                max_keepalive_connections=32,
+                keepalive_expiry=30.0,
+            ),
         )
         self._client = OpenAI(
             api_key=key,
