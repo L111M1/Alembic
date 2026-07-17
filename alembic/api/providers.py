@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Optional
 
+import httpx
 from openai import OpenAI
 
 from alembic.api.base import BaseAPIClient
@@ -20,7 +21,21 @@ class OpenAICompatibleClient(BaseAPIClient):
         self._model = model
         key = api_key or os.environ.get("API_KEY", "")
         url = base_url or os.environ.get("BASE_URL", "") or None
-        self._client = OpenAI(api_key=key, base_url=url, timeout=timeout)
+        # Some proxies (e.g. Cloudflare fronted endpoints like inferknock.ai)
+        # aggressively close idle keep-alive connections, causing
+        # "[SSL: UNEXPECTED_EOF_WHILE_READING]" when httpx reuses them.
+        # A dedicated httpx client with keep-alive disabled sidesteps this.
+        self._http_client = httpx.Client(
+            timeout=timeout,
+            headers={"Connection": "close"},
+            limits=httpx.Limits(max_keepalive_connections=0),
+        )
+        self._client = OpenAI(
+            api_key=key,
+            base_url=url,
+            timeout=timeout,
+            http_client=self._http_client,
+        )
 
     def supports_json_mode(self) -> bool:
         return True
