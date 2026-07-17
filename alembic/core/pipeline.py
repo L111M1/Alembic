@@ -41,7 +41,11 @@ class Pipeline:
 
         ctx = PipelineContext(config=self._config, collector=self._collector)
         for stage in self._build_stages():
-            stage.process(ctx)
+            name = type(stage).__name__
+            try:
+                stage.process(ctx)
+            except Exception as exc:
+                logger.error("Stage %s failed, skipping: %s", name, exc, exc_info=True)
 
         if not self._config.dry_run and ctx.samples and self._config.output.path:
             out_path = Path(self._config.output.path)
