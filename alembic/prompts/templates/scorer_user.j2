@@ -1,5 +1,14 @@
 user: Please score the following QA pair:
 
+{% if source_text %}**Grounding Source:**
+<document>
+{{ source_text }}
+</document>
+
+Judge whether every factual claim in the answer is supported by this source.
+
+{% endif %}
+
 **Question/Instruction:**
 {{ instruction }}
 

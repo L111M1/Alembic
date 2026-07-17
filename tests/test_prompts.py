@@ -47,3 +47,21 @@ class TestPromptBuilder:
         assert "messages" in system.lower()
         assert "Python" in user
         assert "messages" in user
+
+    def test_scorer_template_allows_arbitrary_rubric_tiers(self):
+        dimensions = [{
+            "name": "quality",
+            "label": "Quality",
+            "max_score": 5,
+            "rubric": [
+                {"range": str(score), "desc": f"Tier {score}"}
+                for score in range(1, 6)
+            ],
+        }]
+        builder = PromptBuilder()
+        builder.from_template("scorer_system.j2", dimensions=dimensions)
+        system = builder.build()[0]["content"]
+
+        assert "Tier 1" in system
+        assert "Tier 5" in system
+        assert "4 distinct tiers" not in system

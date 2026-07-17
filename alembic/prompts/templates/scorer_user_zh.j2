@@ -1,5 +1,14 @@
 user: 请对以下问答对进行打分：
 
+{% if source_text %}**依据来源：**
+<document>
+{{ source_text }}
+</document>
+
+请判断回答中的每项事实是否都得到该来源支持。
+
+{% endif %}
+
 **问题/指令：**
 {{ instruction }}
 

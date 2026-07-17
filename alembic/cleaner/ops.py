@@ -5,9 +5,11 @@ from collections import defaultdict
 
 import numpy as np
 
+from alembic.text import normalize_text
+
 
 def clean_text(text: str) -> str:
-    return text.strip()
+    return normalize_text(text)
 
 
 _SPECIAL_CHARS_PATTERN = re.compile(r'[^a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\s.,!?;:\'"()\-_+=/\\@#$%^&*\[\]{}|<>`~]')

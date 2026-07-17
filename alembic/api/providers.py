@@ -6,6 +6,7 @@ import httpx
 from openai import OpenAI
 
 from alembic.api.base import BaseAPIClient
+from alembic.env import load_environment
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class OpenAICompatibleClient(BaseAPIClient):
         base_url: Optional[str] = None,
         timeout: float = 120.0,
     ):
+        load_environment()
         self._model = model
         key = api_key or os.environ.get("API_KEY", "")
         url = base_url or os.environ.get("BASE_URL", "") or None

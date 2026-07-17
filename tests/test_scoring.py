@@ -3,7 +3,7 @@ import os
 
 from alembic.api.base import BaseAPIClient
 from alembic.config import ScoringConfig
-from alembic.scoring import DatasetScorer
+from alembic.scoring import DatasetScorer, MultiJudgeScorer
 
 _DEFAULT_DIMS = [
     {"name": "correctness", "label": "Correctness", "description": "Is the answer accurate and factually correct", "max_score": 10},
@@ -199,6 +199,29 @@ class TestDatasetScorer:
         assert scored == 0
         assert failed == 0
 
+    def test_grounding_source_is_included_in_judge_prompt(self):
+        captured = {}
+
+        class GroundingAPI(BaseAPIClient):
+            def supports_json_mode(self):
+                return True
+
+            def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+                captured["user"] = messages[-1]["content"]
+                return json.dumps({"correctness": 5})
+
+        cfg = ScoringConfig(
+            dimensions=[{"name": "correctness", "max_score": 5}]
+        )
+        sample = {
+            "instruction": "What is lazy evaluation?",
+            "output": "It delays computation.",
+            "metadata": {"source_text": "Lazy evaluation delays computation."},
+        }
+        DatasetScorer(cfg).score_samples(GroundingAPI(), [sample])
+
+        assert "Lazy evaluation delays computation." in captured["user"]
+
     def test_score_no_valid_samples(self, fake_score_api, temp_jsonl):
         path = temp_jsonl([
             '{"instruction": "", "output": ""}',
@@ -214,6 +237,51 @@ class TestDatasetScorer:
         scored, _ = scorer.score_file(fake_score_api, path, out)
 
         assert scored == 0
+
+
+class TestMultiJudgeScorer:
+    class JudgeAPI(BaseAPIClient):
+        def __init__(self, value):
+            self.value = value
+
+        def supports_json_mode(self):
+            return True
+
+        def call(self, messages, temperature=0.7, max_tokens=2048, **kwargs):
+            return json.dumps({"quality": self.value})
+
+    def test_aggregates_scores_and_records_disagreement(self):
+        cfg = ScoringConfig(
+            dimensions=[{"name": "quality", "max_score": 5}],
+            aggregation="mean",
+            min_judges=2,
+            retry={"max_retries": 0},
+        )
+        scorer = MultiJudgeScorer(cfg)
+        results = scorer.score_samples(
+            [("pro", self.JudgeAPI(5)), ("flash", self.JudgeAPI(3))],
+            [{"instruction": "Q", "output": "A"}],
+        )
+
+        assert results[0]["scores"]["quality"] == 4
+        assert results[0]["total_score"] == 4
+        assert results[0]["judge_disagreement"] == 2
+        assert results[0]["judge_count"] == 2
+        assert set(results[0]["judge_scores"]) == {"pro", "flash"}
+
+    def test_fails_when_minimum_judge_count_is_not_met(self):
+        cfg = ScoringConfig(
+            dimensions=[{"name": "quality", "max_score": 5}],
+            min_judges=2,
+            retry={"max_retries": 0},
+        )
+        results = MultiJudgeScorer(cfg).score_samples(
+            [("only", self.JudgeAPI(5))],
+            [{"instruction": "Q", "output": "A"}],
+        )
+
+        assert results[0]["cross_validation_failed"] is True
+        assert results[0]["total_score"] == 0
 
 
 class TestMultiTurnScorer:

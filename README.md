@@ -5,7 +5,7 @@
 ## 安装
 
 ```bash
-pip install openai click pyyaml jinja2 tqdm numpy
+pip install openai click pyyaml jinja2 tqdm numpy python-dotenv
 ```
 
 ## 快速开始
@@ -56,10 +56,14 @@ python -m alembic.cli view output.jsonl -j
 | `seed_driven` | 种子扩增 | 少量种子扩增同风格 | `seed_file` + `target_count` |
 | `seed_driven` + `evolution` | 遗传进化 | 种子 + 交叉/变异算子 | `evolution.crossover_rate` + `mutation_types` |
 | `evol_instruct` | 迭代进化 | 种子逐轮深度/广度变异 | `seed_file` + `max_rounds` |
+| `instruction_backtranslation` | 指令反推 | 从人类撰写的回答反推用户指令 | `document_file` + `target_count` |
+| `document_qa` | 文档问答 | 文档分块后由 LLM 同时生成有依据的问题和回答 | `document_file` + `chunking` |
 
 - **`topic_driven`**：指定主题和维度，LLM 规划子主题和角度后分批生成
 - **`seed_driven`**：基于种子 few-shot 学习，可选遗传算子（交叉/变异）增强多样性
 - **`evol_instruct`**：WizardLM 式迭代进化，N 轮深度（加约束/加深/具体化/推理链）和广度变异使指令逐步复杂，再统一生成回答
+- **`instruction_backtranslation`**：锁定人类撰写的文档作为 `output`，LLM 只反推自然、独立的 `instruction`
+- **`document_qa`**：支持 Markdown/TXT/JSON/JSONL，按结构或 Embedding 语义分块后生成 grounded QA
 - **`CompositeStrategy`**：多策略按 `weight` 加权组合，`merge_generators` 交错输出
 
 详细参数说明见 [docs/config.md](docs/config.md#策略编排)。
@@ -68,11 +72,13 @@ python -m alembic.cli view output.jsonl -j
 
 ### 数据生成
 
-三种策略可独立或按 `weight` 比例组合使用：
+五种策略可独立或按 `weight` 比例组合使用：
 
 - **`topic_driven`**：`topics + knowledge` → Planner LLM 规划 `sub_topic + angle` → Executor LLM 生成 `instruction + output`。支持任意多维度正交组合
 - **`seed_driven`**：按概率走交叉（合并两个种子）/ 变异（自定义算子）/ 默认 few-shot 三种模式
 - **`evol_instruct`**：两阶段——种子经 N 轮深度+广度迭代进化，再统一生成回答。元数据携带完整进化链
+- **`instruction_backtranslation`**：读取文档 JSONL，反推用户指令，原文经规范化后锁定为回答，并保留来源元数据
+- **`document_qa`**：加载并分块长文档，让 LLM 同时生成问题和回答，再由一个或多个 Judge 交叉验证
 
 支持单轮（instruction/output）和多轮对话。每条输出 `metadata` 携带策略、话题、维度标签。
 
@@ -148,11 +154,13 @@ output:
 
 环境变量：`API_KEY` / `BASE_URL`（Chat API），`EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL`（语义去重嵌入 API）。
 
+项目启动时会自动读取当前工作目录中的 `.env`。同名配置的优先级为：YAML 中显式配置 > `.env` > 系统环境变量；`.env` 中缺少的键会继续使用系统环境变量。
+
 ## 开发
 
 ```bash
 # 依赖
-pip install openai click pyyaml jinja2 tqdm numpy pytest ruff
+pip install openai click pyyaml jinja2 tqdm numpy python-dotenv pytest ruff
 
 # 测试
 pytest tests/ -v

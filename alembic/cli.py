@@ -46,13 +46,12 @@ def generate(config: str, dry_run: bool, count: int, seed: int):
     if not dry_run:
         out = pipeline._config.output.path
         print(f"  Output:     {out}")
-        cleaned = out.replace(".jsonl", "_cleaned.jsonl") if not out.endswith("_cleaned.jsonl") else out
         sc_enabled = scfg.enabled and scfg.dimensions
         if sc_enabled:
-            print(f"  Scored:     {scfg.output_path or cleaned.replace('.jsonl', '_scored.jsonl')}")
+            judge_count = len(scfg.judges) if scfg.judges else 1
+            print(f"  Scoring:    enabled ({judge_count} judge(s), included in output)")
             if scfg.min_total_score > 0:
-                p = scfg.output_path or cleaned.replace('.jsonl', '_scored.jsonl')
-                print(f"  Filtered:   {p.replace('_scored.jsonl', '_scored_filtered.jsonl')}")
+                print(f"  Min score:  {scfg.min_total_score}")
 
 
 @main.command()

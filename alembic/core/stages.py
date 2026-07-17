@@ -1,6 +1,7 @@
 import abc
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -12,9 +13,11 @@ from alembic.config import AppConfig
 from alembic.core.observer import CompositeObserver, LogObserver, Observer
 from alembic.core.stats import StatisticsCollector
 from alembic.core.types import GenerationStats
+from alembic.env import load_environment
 from alembic.quality.validators import QualityValidator, build_validator_chain
 from alembic.registry import create_client, create_strategy, stage_registry
 from alembic.scoring.scorer import DatasetScorer
+from alembic.scoring.scorer import MultiJudgeScorer
 from alembic.strategies.base import GenerationStrategy
 from alembic.writers.jsonl_writer import BaseWriter, JSONLWriter, MemoryWriter
 
@@ -208,15 +211,38 @@ class ScoreStage(PipelineStage):
         if not (scfg.enabled and scfg.dimensions) or not ctx.samples:
             return
 
-        scoring_api = create_client(
-            model=scfg.model or cfg.api.model,
-            api_key=scfg.api_key or cfg.api.api_key,
-            base_url=scfg.base_url or cfg.api.base_url,
-            retry=scfg.retry or cfg.api.retry,
-        )
-
-        scorer = DatasetScorer(scfg)
-        ctx.samples = scorer.score_samples(scoring_api, ctx.samples)
+        if scfg.judges:
+            load_environment()
+            judges = []
+            for index, judge in enumerate(scfg.judges):
+                model = judge.get("model") or scfg.model or cfg.api.model
+                name = judge.get("name") or f"{model}:{index}"
+                api_key = judge.get("api_key")
+                if judge.get("api_key_env"):
+                    api_key = os.environ.get(judge["api_key_env"])
+                base_url = judge.get("base_url")
+                if judge.get("base_url_env"):
+                    base_url = os.environ.get(judge["base_url_env"])
+                judges.append((
+                    name,
+                    create_client(
+                        model=model,
+                        api_key=api_key or scfg.api_key or cfg.api.api_key,
+                        base_url=base_url or scfg.base_url or cfg.api.base_url,
+                        retry=judge.get("retry") or scfg.retry or cfg.api.retry,
+                    ),
+                ))
+            scorer = MultiJudgeScorer(scfg)
+            ctx.samples = scorer.score_samples(judges, ctx.samples)
+        else:
+            scoring_api = create_client(
+                model=scfg.model or cfg.api.model,
+                api_key=scfg.api_key or cfg.api.api_key,
+                base_url=scfg.base_url or cfg.api.base_url,
+                retry=scfg.retry or cfg.api.retry,
+            )
+            scorer = DatasetScorer(scfg)
+            ctx.samples = scorer.score_samples(scoring_api, ctx.samples)
         scored, failed = scorer.stats
         ctx.collector.record_scorer(scored, failed)
         ctx.collector.collect_scores(ctx.samples)
@@ -234,7 +260,12 @@ class ScoreFilterStage(PipelineStage):
         filtered: list[dict] = []
         for sample in ctx.samples:
             total = sample.get("total_score", 0)
-            if total >= min_score:
+            disagreement = sample.get("judge_disagreement", 0)
+            disagreement_ok = (
+                cfg.scoring.max_judge_disagreement <= 0
+                or disagreement <= cfg.scoring.max_judge_disagreement
+            )
+            if total >= min_score and disagreement_ok:
                 filtered.append(sample)
                 kept += 1
             else:

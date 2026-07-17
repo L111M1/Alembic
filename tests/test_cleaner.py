@@ -1,10 +1,14 @@
 import json
 
 from alembic.cleaner import DatasetCleaner
+from alembic.cleaner.ops import clean_text
 from alembic.config import CleanerConfig
 
 
 class TestCleaner:
+    def test_clean_text_normalizes_invisible_and_control_characters(self):
+        assert clean_text("\ufeffＡ\u200bB\x00\r\n\r\n\r\nC 👩‍💻") == "AB\n\nC 👩‍💻"
+
     def test_clean_file(self, temp_jsonl):
         path = temp_jsonl([
             json.dumps({"instruction": "what is python", "output": "Python is a high-level programming language used for web development and data science."}),

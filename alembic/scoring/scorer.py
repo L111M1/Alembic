@@ -1,5 +1,6 @@
 import json
 import logging
+import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
@@ -14,13 +15,28 @@ _SCORING_TEMPLATE_SYSTEM = "scorer_system.j2"
 _SCORING_TEMPLATE_USER = "scorer_user.j2"
 
 
-def _default_rubric(max_score: int) -> list[dict]:
+def _default_rubric(max_score: int, lang: str = "en") -> list[dict]:
     step = max_score // 4
+    descriptions = (
+        [
+            "较差——错误、误导或无关",
+            "一般——大体正确但存在明显缺漏",
+            "良好——正确、实用并覆盖主要要点",
+            "优秀——准确、完整且符合最佳实践",
+        ]
+        if lang == "zh"
+        else [
+            "Poor — incorrect, misleading, or irrelevant",
+            "Fair — mostly correct but has notable gaps",
+            "Good — correct, useful, covers main points",
+            "Excellent — precise, thorough, best-practice",
+        ]
+    )
     return [
-        {"range": f"1-{step}", "desc": "Poor — incorrect, misleading, or irrelevant"},
-        {"range": f"{step+1}-{2*step}", "desc": "Fair — mostly correct but has notable gaps"},
-        {"range": f"{2*step+1}-{3*step}", "desc": "Good — correct, useful, covers main points"},
-        {"range": f"{3*step+1}-{max_score}", "desc": "Excellent — precise, thorough, best-practice"},
+        {"range": f"1-{step}", "desc": descriptions[0]},
+        {"range": f"{step+1}-{2*step}", "desc": descriptions[1]},
+        {"range": f"{2*step+1}-{3*step}", "desc": descriptions[2]},
+        {"range": f"{3*step+1}-{max_score}", "desc": descriptions[3]},
     ]
 
 
@@ -147,7 +163,9 @@ class DatasetScorer:
             if "label" not in d:
                 d["label"] = d["name"]
             if "rubric" not in d:
-                d["rubric"] = _default_rubric(d.get("max_score", 10))
+                d["rubric"] = _default_rubric(
+                    d.get("max_score", 10), self._config.lang
+                )
         dim_names = ", ".join(f'"{d["name"]}"' for d in dims)
 
         prompt = PromptBuilder(lang=self._config.lang)
@@ -156,6 +174,7 @@ class DatasetScorer:
             _SCORING_TEMPLATE_USER,
             instruction=inst,
             output=out,
+            source_text=(sample.get("metadata") or {}).get("source_text", ""),
             dim_names=dim_names,
         )
         messages = prompt.build()
@@ -192,6 +211,96 @@ class DatasetScorer:
                 except (ValueError, TypeError):
                     scores[name] = 0
         return scores
+
+    @property
+    def stats(self) -> tuple[int, int]:
+        return self._scored_count, self._failed_count
+
+
+class MultiJudgeScorer:
+    """Score each sample with multiple independent judges and aggregate results."""
+
+    def __init__(self, config: ScoringConfig):
+        if config.aggregation not in {"mean", "min", "max", "median"}:
+            raise ValueError("scoring.aggregation must be mean, min, max, or median")
+        self._config = config
+        self._scored_count = 0
+        self._failed_count = 0
+
+    def score_samples(
+        self,
+        judges: list[tuple[str, BaseAPIClient]],
+        samples: list[dict],
+    ) -> list[dict]:
+        if not samples or not judges:
+            return samples
+        judge_results: dict[str, list[dict]] = {}
+        with ThreadPoolExecutor(max_workers=len(judges)) as executor:
+            futures = {
+                executor.submit(
+                    DatasetScorer(self._config).score_samples,
+                    api,
+                    [dict(sample) for sample in samples],
+                ): name
+                for name, api in judges
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    judge_results[name] = future.result()
+                except Exception as exc:
+                    logger.warning("Judge %s failed: %s", name, exc)
+
+        results: list[dict] = []
+        for index, sample in enumerate(samples):
+            result = dict(sample)
+            per_judge: dict[str, dict] = {}
+            for name, rows in judge_results.items():
+                if index >= len(rows):
+                    continue
+                scores = rows[index].get("scores")
+                if isinstance(scores, dict) and scores:
+                    per_judge[name] = scores
+            result["judge_scores"] = per_judge
+            result["judge_count"] = len(per_judge)
+            if len(per_judge) < self._config.min_judges:
+                result["cross_validation_failed"] = True
+                result["scores"] = {}
+                result["total_score"] = 0.0
+                result["judge_disagreement"] = 0.0
+                self._failed_count += 1
+                results.append(result)
+                continue
+
+            aggregated: dict[str, float] = {}
+            disagreements: list[float] = []
+            for dimension in self._config.dimensions:
+                name = dimension["name"]
+                values = [
+                    float(scores[name])
+                    for scores in per_judge.values()
+                    if name in scores
+                ]
+                if not values:
+                    continue
+                aggregated[name] = self._aggregate(values)
+                disagreements.append(max(values) - min(values))
+            result["scores"] = aggregated
+            result["total_score"] = sum(aggregated.values())
+            result["judge_disagreement"] = max(disagreements, default=0.0)
+            result["cross_validation_failed"] = False
+            self._scored_count += 1
+            results.append(result)
+        return results
+
+    def _aggregate(self, values: list[float]) -> float:
+        if self._config.aggregation == "min":
+            return min(values)
+        if self._config.aggregation == "max":
+            return max(values)
+        if self._config.aggregation == "median":
+            return float(statistics.median(values))
+        return sum(values) / len(values)
 
     @property
     def stats(self) -> tuple[int, int]:

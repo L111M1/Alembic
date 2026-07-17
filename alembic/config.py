@@ -79,6 +79,10 @@ class ScoringConfig:
     min_total_score: float = 0.0
     output_path: Optional[str] = None
     field_map: Optional[dict] = None
+    judges: list = field(default_factory=list)
+    aggregation: str = "mean"
+    min_judges: int = 1
+    max_judge_disagreement: float = 0.0
 
 
 @dataclass
@@ -175,6 +179,12 @@ class AppConfig:
             min_total_score=float(scoring_data.get("min_total_score", 0.0)),
             output_path=scoring_data.get("output_path"),
             field_map=scoring_data.get("field_map"),
+            judges=scoring_data.get("judges", []),
+            aggregation=scoring_data.get("aggregation", "mean"),
+            min_judges=max(1, int(scoring_data.get("min_judges", 1))),
+            max_judge_disagreement=float(
+                scoring_data.get("max_judge_disagreement", 0.0)
+            ),
         )
 
         output_cfg = OutputConfig(

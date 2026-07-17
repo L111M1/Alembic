@@ -1,11 +1,46 @@
-*
-!.gitignore
-!alembic/
-!alembic/**
-!tests/
-!tests/**
-!docs/
-!docs/**
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python caches and tooling
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytest-tmp*/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE and local agent settings
+.idea/
+.vscode/
+.agents/
+.codex/
+
+# Logs and generated datasets
+*.log
+/sft_gen_config.yaml
+generated*.jsonl
+*_cleaned.jsonl
+*_scored.jsonl
+*_scored_filtered.jsonl
+*_stats.json
+*_report.json
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini

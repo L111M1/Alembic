@@ -5,7 +5,11 @@ from alembic.api.base import BaseAPIClient, RetryConfig, with_retry
 from alembic.api.providers import OpenAICompatibleClient
 from alembic.strategies.base import GenerationStrategy
 from alembic.strategies.composite import CompositeStrategy
+from alembic.strategies.document_qa import DocumentQAStrategy
 from alembic.strategies.evol_instruct import EvolInstructStrategy
+from alembic.strategies.instruction_backtranslation import (
+    InstructionBacktranslationStrategy,
+)
 from alembic.strategies.seed_driven import SeedDrivenStrategy
 from alembic.strategies.topic_driven import TopicDrivenStrategy
 
@@ -106,6 +110,10 @@ strategy_registry = StrategyRegistry()
 strategy_registry.register("topic_driven", TopicDrivenStrategy)
 strategy_registry.register("seed_driven", SeedDrivenStrategy)
 strategy_registry.register("evol_instruct", EvolInstructStrategy)
+strategy_registry.register("document_qa", DocumentQAStrategy)
+strategy_registry.register(
+    "instruction_backtranslation", InstructionBacktranslationStrategy
+)
 
 
 # Backward-compatible alias.

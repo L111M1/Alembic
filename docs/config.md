@@ -102,6 +102,8 @@ api:
 | `topic_driven` | 按主题/领域指定生成范围，内部随机题型和难度 | `topics` + `total_count` |
 | `seed_driven` | 基于少量种子数据扩增，学习格式和风格 | `seed_file` + `target_count` |
 | `evol_instruct` | 迭代指令进化（Evol-Instruct），多轮深度/广度变异使指令逐步复杂 | `seed_file` + `max_rounds` |
+| `instruction_backtranslation` | 从人类撰写的回答反推自然用户指令，原文锁定为输出 | `document_file` + `target_count` |
+| `document_qa` | 长文档结构/语义分块后生成有来源依据的问答 | `document_file` + `chunking` |
 
 ### topic_driven
 
@@ -234,6 +236,84 @@ api:
 }
 ```
 
+### instruction_backtranslation
+
+Instruction Backtranslation 将人类撰写的文本视为回答，由 LLM 反推出一条自然、独立的用户指令。模型返回的 `output` 和 `system` 会被忽略，最终 `output` 始终使用规范化后的源文本，以避免事实漂移。
+
+输入是 JSONL，每行默认使用 `text` 字段，`id`、`source`、`title` 和 `metadata` 可选：
+
+```json
+{"id":"doc-1","text":"Python 生成器通过 yield 按需产生值，因此不需要一次性加载全部结果。","source":"manual","title":"生成器"}
+```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `type` | string | 是 | — | `instruction_backtranslation` |
+| `document_file` | string | 是 | — | 源文档 JSONL 路径 |
+| `field_map` | dict | 否 | `{}` | 源字段到规范字段的映射，如 `{content: text, doc_id: id}` |
+| `target_count` | int | 否 | `0` | 最大文档数；0 表示处理全部有效文档 |
+| `min_document_length` | int | 否 | `50` | 源文本最小字符数 |
+| `max_document_length` | int | 否 | `4000` | 源文本最大字符数 |
+| `max_instruction_length` | int | 否 | `500` | 反推指令最大字符数 |
+| `reject_context_references` | bool | 否 | `true` | 拒绝“根据上文 / provided document”等依赖缺失上下文的指令 |
+| `shuffle` | bool | 否 | `false` | 在截取 `target_count` 前随机打乱文档 |
+| `temperature` | float | 否 | `0.8` | 反推调用温度 |
+| `max_tokens` | int | 否 | `2048` | 反推调用最大 token 数 |
+
+```yaml
+strategies:
+  - type: instruction_backtranslation
+    document_file: ./documents.jsonl
+    field_map:
+      content: text
+      document_id: id
+      origin: source
+    target_count: 100
+    min_document_length: 50
+    max_document_length: 4000
+    max_instruction_length: 500
+    reject_context_references: true
+    temperature: 0.5
+    max_tokens: 512
+```
+
+最终样本会携带 `strategy`、`source_id`、`source_index`、`source`、`title`、`task_type` 和可选 `source_metadata`。推荐同时启用 LLM 评分，以 1–5 分筛选 instruction 与原文回答的整体匹配质量；本地运行配置统一使用根目录的 `sft_gen_config.yaml`。
+
+### document_qa
+
+加载 Markdown、TXT、JSON 或 JSONL 文档，先按结构拆成段落/句子，再选择结构合并或 Embedding 相邻语义分块。每个块交给 LLM 同时生成独立的 `instruction` 和有来源依据的 `output`。样本 metadata 保留完整 `source_text`，供 Judge 检查回答是否受到来源支持。
+
+文档在分块和 Embedding 前会自动执行安全字符规范化：统一 Unicode 兼容字符与换行，清除 BOM、零宽空格、双向文本控制符、非法控制字符和解码替换符，并规范空白行。Markdown 标记、数学符号、中文标点、emoji 及连接 emoji 的零宽连接符会保留。
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `document_file` | string | — | 输入文件，支持 `.md/.markdown/.txt/.json/.jsonl` |
+| `field_map` | dict | `{}` | JSON/JSONL 源字段到规范字段的映射 |
+| `target_count` | int | `0` | 最多处理多少个块；0 表示全部 |
+| `max_instruction_length` | int | `500` | 生成指令最大字符数 |
+| `max_output_length` | int | `4000` | 生成回答最大字符数 |
+| `reject_context_references` | bool | `true` | 拒绝依赖“上文/给定文档”的指令 |
+| `chunking.enabled` | bool | `false` | 是否进行文档分块 |
+| `chunking.mode` | string | `structure` | `structure` 或 `semantic` |
+| `chunking.min_chunk_length` | int | `200` | 建议最小块长度 |
+| `chunking.max_chunk_length` | int | `1500` | 块最大长度 |
+| `chunking.similarity_threshold` | float | `0.55` | 相邻段落低于该余弦相似度时切块 |
+| `chunking.embedding_model` | string | `text-embedding-v3` | 语义分块模型 |
+| `chunking.embedding_batch_size` | int | `32` | Embedding 批大小 |
+
+```yaml
+strategies:
+  - type: document_qa
+    document_file: ./knowledge.md
+    chunking:
+      enabled: true
+      mode: semantic
+      min_chunk_length: 300
+      max_chunk_length: 1200
+      similarity_threshold: 0.55
+      embedding_model: text-embedding-v3
+```
+
 ## 质量校验
 
 生成阶段实时过滤低质量样本（Chain of Responsibility：长度 → 截断 → 去重）。
@@ -296,6 +376,14 @@ LLM-as-Judge 多维度打分。维度完全可自定义。
 | `min_total_score` | float | 否 | 0.0 | 最低总分阈值，低于此值被过滤 |
 | `output_path` | string | 否 | 自动拼接 | 评分结果输出路径 |
 | `field_map` | dict | 否 | — | 字段映射 |
+| `judges` | array | 否 | `[]` | 多模型 Judge 列表；为空时使用单模型评分 |
+| `judges[].name` | string | 否 | 模型名+序号 | Judge 唯一名称 |
+| `judges[].model` | string | 否 | 复用评分模型 | Judge 模型名称 |
+| `judges[].api_key_env` | string | 否 | — | 可选的独立密钥环境变量名 |
+| `judges[].base_url_env` | string | 否 | — | 可选的独立地址环境变量名 |
+| `aggregation` | string | 否 | `mean` | `mean/min/max/median` 分数聚合方式 |
+| `min_judges` | int | 否 | `1` | 每条样本至少需要几个成功 Judge |
+| `max_judge_disagreement` | float | 否 | `0` | 单维最大分差；0 表示不按分歧过滤 |
 
 ```yaml
 scoring:
@@ -317,6 +405,23 @@ scoring:
       label: "清晰度"
       max_score: 10
   min_total_score: 20
+```
+
+多模型交叉验证示例：
+
+```yaml
+scoring:
+  enabled: true
+  dimensions:
+    - {name: grounding, label: 回答事实是否得到来源支持, max_score: 5}
+    - {name: correctness, label: 回答是否准确, max_score: 5}
+  judges:
+    - {name: pro, model: deepseek-v4-pro}
+    - {name: flash, model: deepseek-v4-flash}
+  aggregation: mean
+  min_judges: 2
+  max_judge_disagreement: 2
+  min_total_score: 8
 ```
 
 ## 输出配置

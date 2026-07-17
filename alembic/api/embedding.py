@@ -5,6 +5,8 @@ from typing import Optional
 import numpy as np
 from openai import OpenAI
 
+from alembic.env import load_environment
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,7 @@ class EmbeddingClient:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
+        load_environment()
         self._model = model
         key = api_key or os.environ.get("EMBEDDING_API_KEY") or os.environ.get("API_KEY", "")
         url = base_url or os.environ.get("EMBEDDING_BASE_URL") or os.environ.get("BASE_URL", "") or None

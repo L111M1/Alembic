@@ -68,7 +68,13 @@ alembic/
 │   ├── topic_driven.py # 两阶段：规划 → 执行，子主题分支
 │   ├── seed_driven.py  # 基于种子示例的生成（few-shot）+ 进化算子（交叉/变异）
 │   ├── evol_instruct.py# 迭代指令进化（Evol-Instruct）：多轮深度/广度变异
+│   ├── instruction_backtranslation.py # 文档回答 → 用户指令，锁定原文输出
+│   ├── document_qa.py   # 文档分块 → grounded instruction/output
 │   └── composite.py    # CompositeStrategy + merge_generators
+│
+├── documents/          # 文档加载与分块
+│   ├── loader.py       # Markdown/TXT/JSON/JSONL 统一加载
+│   └── chunker.py      # 结构分块与 Embedding 相邻语义分块
 │
 ├── cleaner/            # 生成后清洗
 │   ├── cleaner.py      # DatasetCleaner：规范化 → 过滤 → 去重 → 写出
@@ -309,6 +315,20 @@ strategies:
 ```
 
 每条样本元数据携带完整进化链，详见 [config.md](config.md#evol_instruct)。
+
+### InstructionBacktranslationStrategy（指令反推）
+
+读取人类撰写的文档 JSONL，让 LLM 只反推自然、独立的用户指令。专用解析器忽略模型返回的 `output` 和 `system`，将规范化后的源文档锁定为回答，并保存 `source_id` 等溯源信息。生成后继续复用 Cleaner、Scorer 和 ScoreFilterStage 完成 self-curation。
+
+```yaml
+strategies:
+  - type: instruction_backtranslation
+    document_file: ./documents.jsonl
+    target_count: 100
+    min_document_length: 50
+    max_document_length: 4000
+    reject_context_references: true
+```
 
 ### CompositeStrategy
 加权合并多个策略，通过 `merge_generators` 交错输出。
