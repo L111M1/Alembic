@@ -32,6 +32,7 @@ dist/
 
 # Logs and generated datasets
 *.log
+/data/
 /sft_gen_config.yaml
 generated*.jsonl
 *_cleaned.jsonl
